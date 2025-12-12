@@ -433,15 +433,36 @@ class DatabaseClient:
             else :
                 raise DBclientException(resp.get("error"))
             
-    def update_game_version(self, game_id: int, latestVersion: str) -> list[list]:
-        sql = "UPDATE Game SET LatestVersion = ? WHERE id = ? RETURNING *"
-        params = [latestVersion, game_id]
+    # ... inside DatabaseClient class ...
+
+    def update_game(self, game_id: int, latest_version: str = None, description: str = None) -> list[list]:
+        """
+        Dynamically updates Game fields (LatestVersion, description).
+        """
+        fields = []
+        params = []
+
+        if latest_version is not None:
+            fields.append("LatestVersion = ?")
+            params.append(latest_version)
+        
+        if description is not None:
+            fields.append("description = ?")
+            params.append(description)
+
+        if not fields:
+            raise ValueError("No fields provided to update")
+
+        sql = f"UPDATE Game SET {', '.join(fields)} WHERE id = ? RETURNING *"
+        params.append(game_id)
+
         resp = self._send_request(sql, params)
         if isinstance(resp, dict):
             if resp.get("status") == "ok":
                 return resp.get("data")
-            else :
+            else:
                 raise DBclientException(resp.get("error"))
+        return resp
             
     def get_version_by_gameid_and_version(self, game_id: int, version: str) -> list[list]:
         sql = "SELECT * FROM GameVersion WHERE gameId = ? AND VersionNumber = ? LIMIT 1"

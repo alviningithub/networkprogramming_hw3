@@ -74,13 +74,18 @@ class DeveloperClient:
                 op = response.get("op")
                 if self.expecting_op and op == self.expecting_op:
                     self.response_data = response
-                    self.expecting_op = None # Reset expectation
-                    self.response_event.set() # Wake up main thread
+                    # Do NOT print here; let the waiting function handle the data
+                    self.expecting_op = None 
+                    self.response_event.set() 
                 else:
-                    # If main thread isn't waiting, just print it (Async Notification)
+                    # If main thread isn't waiting, print it normally (Async Notification)
                     self.update_state_from_response(response)
                     self.print_server_response(response)
-                    print("\nSelection > ", end="", flush=True)
+                    
+                    # Re-print prompt only if we are idle in the menu
+                    # (This prevents prompt spam during active operations)
+                    if not self.expecting_op:
+                        print("\nSelection > ", end="", flush=True)
                 
             except TCPutils.ConnectionClosedByPeer:
                 print("\n[CLIENT] Disconnected from server.")
@@ -97,11 +102,11 @@ class DeveloperClient:
         self.expecting_op = op
         self.response_event.clear()
         
-        # Send signal to listener to capture the next 'op'
+        # Block until listener sets the event
         got_data = self.response_event.wait(timeout)
         
         if not got_data:
-            self.expecting_op = None # Timeout cleanup
+            self.expecting_op = None # Cleanup on timeout
             return None
         return self.response_data
 
@@ -117,15 +122,33 @@ class DeveloperClient:
                 self.current_user = None
 
     def print_server_response(self, response):
-        """Generic printer for async messages."""
+        """Formats and prints server responses, INCLUDING data tables."""
         status = response.get("status", "UNKNOWN")
         message = response.get("message", "")
         op = response.get("op", "notification")
+        data = response.get("data")       # <--- Capture data
+        versions = response.get("versions") # <--- Capture versions
         
         if status == "ERROR":
             print(f"\n[SERVER - {op}] ERROR: {message}")
         else:
             print(f"\n[SERVER - {op}] {message}")
+            
+            # --- FIX: Explicitly print data tables ---
+            if op == "list_games" and data:
+                print(f"\n   {'Name':<20} | {'Ver':<8} | {'ID':<5} | {'Description'}")
+                print("   " + "-"*60)
+                for g in data:
+                    # Handle potential missing keys gracefully
+                    name = g.get('name', 'N/A')
+                    ver = g.get('latestVersion', 'N/A')
+                    gid = str(g.get('id', 'N/A'))
+                    desc = g.get('description', '')
+                    print(f"   {name:<20} | {ver:<8} | {gid:<5} | {desc}")
+            
+            if op == "list_versions" and versions:
+                # version_list is usually a list of strings
+                print(f"\n   Available Versions: {', '.join(versions)}")
 
     def send_request(self, op, data=None):
         """Helper to send a JSON request."""
@@ -146,7 +169,6 @@ class DeveloperClient:
     def get_input(self, prompt_text):
         """Wraps input to handle cancellation."""
         val = input(prompt_text).strip()
-        # "Press Esc" isn't standard in Python input(), so we use empty or 'c'
         if val == "" or val.lower() == 'c':
             print("   [Action Cancelled]")
             raise CancelAction()
@@ -183,7 +205,7 @@ class DeveloperClient:
         print(f"   [...] Fetching game list...")
         self.send_request("list_games")
         
-        # Wait for listener to get the data
+        # Wait for listener to get the data (blocks main thread)
         resp = self.wait_for_response("list_games")
         
         if not resp or resp.get("status") != "OK":
@@ -195,6 +217,7 @@ class DeveloperClient:
             print("   [!] You have no games uploaded.")
             return None
 
+        # Print the selection menu locally
         print("\n   --- YOUR GAMES ---")
         print(f"   {'No.':<4} | {'Name':<20} | {'Ver':<8}")
         print("   " + "-"*40)
@@ -207,7 +230,7 @@ class DeveloperClient:
             try:
                 idx = int(choice) - 1
                 if 0 <= idx < len(games):
-                    return games[idx] # Return full game dict
+                    return games[idx]
                 print("   [!] Invalid number.")
             except ValueError:
                 print("   [!] Please enter a number.")
@@ -254,11 +277,11 @@ class DeveloperClient:
         print(f"--- Developer Client (Games Dir: ./{GAMES_DIR}/) ---")
         
         while self.running:
-            time.sleep(0.2) # UI polish: wait for async prints to settle
+            time.sleep(0.2)
             self.print_menu()
             
             try:
-                # Direct input (not wrapped in get_input because Enter here creates spacing)
+                # Direct input (no wait wrapper)
                 choice = input("\nSelection > ").strip()
                 
                 if not self.is_logged_in:
@@ -267,7 +290,6 @@ class DeveloperClient:
                     self.handle_user_input(choice)
             
             except CancelAction:
-                # Catch cancellations from sub-menus
                 pass 
             except KeyboardInterrupt:
                 print("\nExiting...")
@@ -301,7 +323,7 @@ class DeveloperClient:
             u = self.get_input("   Username (Enter to cancel): ")
             p = self.get_input("   Password (Enter to cancel): ")
             self.send_request("login", {"username": u, "passwordHash": self.hash_password(p)})
-            # We don't block here; listener handles success/fail message
+            # Async listener will print result and toggle is_logged_in
 
         elif choice == '2': # Register
             u = self.get_input("   New Username: ")
@@ -314,14 +336,14 @@ class DeveloperClient:
             if self.sock: self.sock.close()
 
     def handle_user_input(self, choice):
-        # 1. LIST GAMES (Simple async print)
+        # 1. LIST GAMES (Async view)
         if choice == '1':
             self.send_request("list_games")
+            # Listener calls print_server_response -> prints table
 
         # 2. UPLOAD NEW (Local folder selection)
         elif choice == '2':
             folder = self.get_input(f"   Enter folder name inside '{GAMES_DIR}/' (or Enter to cancel): ")
-            
             zip_path = self.validate_and_zip(folder)
             if zip_path:
                 try:
@@ -330,19 +352,15 @@ class DeveloperClient:
                 finally:
                     if os.path.exists(zip_path): os.remove(zip_path)
 
-        # 3. UPDATE EXISTING (Pick from list -> Select Local Folder)
+        # 3. UPDATE EXISTING (Pick Server Game -> Pick Local Folder)
         elif choice == '3':
-            # A. Pick Game from Server List
             game = self.interactive_pick_game(action_verb="update")
             if not game: return
             
             game_name = game['name']
             print(f"   Selected: {game_name}")
 
-            # B. Pick Local Folder
             folder = self.get_input(f"   Enter local folder name for update (or Enter to cancel): ")
-            
-            # C. Verify & Send
             zip_path = self.validate_and_zip(folder)
             if zip_path:
                 try:
@@ -353,18 +371,15 @@ class DeveloperClient:
 
         # 4. REMOVE GAME (Pick Game -> Pick Version)
         elif choice == '4':
-            # A. Pick Game
             game = self.interactive_pick_game(action_verb="remove")
             if not game: return
             
             game_name = game['name']
             
-            # B. Pick Version
             ver_choice = self.interactive_pick_version(game_name)
             if not ver_choice: return
 
             payload = {"game_name": game_name}
-            
             if ver_choice == "ALL":
                 print(f"   [!!!] Deleting ENTIRE game '{game_name}'...")
                 payload["version"] = None
@@ -374,10 +389,14 @@ class DeveloperClient:
 
             self.send_request("remove_game", payload)
 
-        # 5. LIST VERSIONS
+        # 5. LIST VERSIONS (Async view)
         elif choice == '5':
+            # We re-use interactive pick to SELECT which game to inspect
+            # This is cleaner than asking user to type the name manually
             game = self.interactive_pick_game(action_verb="inspect")
             if game:
+                # Send request for pure viewing. 
+                # Listener will use print_server_response to show result.
                 self.send_request("list_versions", {"game_name": game['name']})
 
         elif choice == '9':

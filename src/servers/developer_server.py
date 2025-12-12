@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from typing import Dict, Any, Tuple
 # Ensure TCPutils.py is in the same directory
 import utils.TCPutils as TCPutils 
+from get_game import get_game_location
 
 # Database client
 from DBclient import DatabaseClient, DBclientException
@@ -332,7 +333,7 @@ class GameShopServer:
             #insert version
             version_id = db.insert_game_version(game_id[0][0], version, command)
             #clear garbage if any
-            dest_path = os.path.join(self.storage_dir, str(userId), game_name, version)
+            dest_path = get_game_location(userId, game_name, version)
             if os.path.exists(dest_path): shutil.rmtree(dest_path)
             shutil.move(target_root, dest_path)
             TCPutils.send_json(conn, {"status": "OK", "op":"handle_upload" ,  "message": f"Uploaded {game_name} v{version}"})
@@ -348,16 +349,16 @@ class GameShopServer:
             if extract_path and os.path.exists(extract_path): shutil.rmtree(extract_path, ignore_errors=True)
 
     @request_handler("update_game")
-    def handle_update(self, conn, request, filepath, session,db:DatabaseClient):
+    def handle_update(self, conn, request, filepath, session, db: DatabaseClient):
         user = session["user"]
         userId = session["userId"]
         if not user:
-            TCPutils.send_json(conn, {"status": "ERROR","op":"update_game", "message": "Auth required"})
+            TCPutils.send_json(conn, {"status": "ERROR", "op": "update_game", "message": "Auth required"})
             if filepath: os.remove(filepath)
             return
 
         if not filepath:
-            TCPutils.send_json(conn, {"status": "ERROR","op":"update_game","message": "No file"})
+            TCPutils.send_json(conn, {"status": "ERROR", "op": "update_game", "message": "No file"})
             return
 
         extract_path = None
@@ -368,30 +369,37 @@ class GameShopServer:
             # 2. Check Structure
             check_folder_structure(target_root)
             
-            # 3. Get Config
-            config = get_config(target_root)
+            # 3. Get Config (Description is extracted here)
+            config = get_config(target_root) 
             game_name = config["name"]
             version = config["version"]
+            description = config.get("description") #
 
             # 4. Logic & Move
-            # check if the game exist
+            # Check if game exists
             game = db.get_game_by_name(game_name)
             if not game:
                 raise Exception("Game not found.")
             gameid = game[0][0]
-            # check if version exists
+            
+            # Check if version exists
             version_record = db.get_version_by_gameid_and_version(gameid, version)
             if version_record:
                 raise Exception("Version exists.")
-            # check if the user is the owner
+            
+            # Check owner
             if game[0][3] != userId:
                 raise Exception("Not the owner.")
-            # update latest version
-            db.update_game_version(gameid, version)
+            
+            # Insert new version
+            db.insert_game_version(gameid, version, config["command"])
+            
+            # --- UPDATE ---
+            # Update both the LatestVersion AND the Description
+            db.update_game(gameid, latest_version=version, description=description)
+            # --------------
 
-            #update database
-            version_id = db.insert_game_version(gameid, version, config["command"])
-            #move files
+            # Move files
             dest_path = os.path.join(self.storage_dir, str(userId), game_name, version)
             if os.path.exists(dest_path): shutil.rmtree(dest_path)
             shutil.move(target_root, dest_path)
@@ -399,6 +407,7 @@ class GameShopServer:
             TCPutils.send_json(conn, {"status": "OK", "message": f"Updated {game_name} v{version}"})
 
         except Exception as e:
+            print(f"Update Error: {e}")
             TCPutils.send_json(conn, {"status": "ERROR", "message": str(e)})
         finally:
             if filepath and os.path.exists(filepath): os.remove(filepath)
@@ -446,7 +455,7 @@ class GameShopServer:
                 db.delete_game_version_by_id(target_version_id)
                 
                 # 3. Delete physical files for this version
-                version_path = os.path.join(self.storage_dir, str(userid), game_name, version_to_remove)
+                version_path = get_game_location(userid, game_name, version_to_remove)
                 if os.path.exists(version_path):
                     shutil.rmtree(version_path)
 
@@ -457,7 +466,7 @@ class GameShopServer:
                 if not remaining_versions:
                     # No versions left -> Delete the Game entirely
                     db.delete_game_by_id(game_id)
-                    game_root_path = os.path.join(self.storage_dir, str(userid), game_name)
+                    game_root_path = get_game_location(userid, game_name)
                     if os.path.exists(game_root_path):
                         shutil.rmtree(game_root_path)
                     msg = f"Removed version {version_to_remove}. No versions left, game deleted."
@@ -467,7 +476,7 @@ class GameShopServer:
                     if version_to_remove == current_latest_version:
                         # remaining_versions is sorted DESC, so index 0 is the new latest
                         new_latest = remaining_versions[0][2]
-                        db.update_game_version(game_id, new_latest)
+                        db.update_game(game_id, latest_version=new_latest)
                         msg = f"Removed {version_to_remove}. Promoted {new_latest} to latest."
                     else:
                         msg = f"Removed version {version_to_remove}."

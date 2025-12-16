@@ -547,3 +547,48 @@ class DatabaseClient:
             else:
                 raise DBclientException(resp.get("error"))
         return resp
+    
+    def list_all_games(self) -> list[list]:
+        """Returns a list of all games (id, name)."""
+        sql = "SELECT id, name FROM Game"
+        resp = self._send_request(sql)
+        if isinstance(resp, dict):
+            if resp.get("status") == "ok":
+                return resp.get("data")
+            else:
+                raise DBclientException(resp.get("error"))
+        return resp
+
+    def get_game_by_id(self, game_id: int) -> list[list]:
+        """Find a game by its ID."""
+        sql = "SELECT * FROM Game WHERE id = ? LIMIT 1"
+        params = [game_id]
+        resp = self._send_request(sql, params)
+        if isinstance(resp, dict):
+            if resp.get("status") == "ok":
+                return resp.get("data")
+            else:
+                raise DBclientException(resp.get("error"))
+        return resp
+
+    def get_comments_by_game_id(self, game_id: int) -> list[list]:
+        """
+        Returns comments for a specific game.
+        Joins with User table to get the username.
+        """
+        # Selects: Comment ID, User Name, Content, Score, Timestamp
+        sql = """
+            SELECT C.id, U.name, C.content, C.score, C.timestamp 
+            FROM comment C 
+            JOIN User U ON C.userId = U.id 
+            WHERE C.gameId = ?
+            ORDER BY C.timestamp DESC
+        """
+        params = [game_id]
+        resp = self._send_request(sql, params)
+        if isinstance(resp, dict):
+            if resp.get("status") == "ok":
+                return resp.get("data")
+            else:
+                raise DBclientException(resp.get("error"))
+        return resp

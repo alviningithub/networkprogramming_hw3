@@ -8,6 +8,8 @@ from typing import Optional, Dict, Any, Tuple
 import socket
 from DBclient import DatabaseClient
 from time import sleep
+import shutil
+from get_game import get_game_location  # Added import
 
 # ==========================================
 # 1. Operation Registry & Decorator
@@ -46,6 +48,11 @@ class MultiThreadedServer:
 
         self.db_host = db_host
         self.db_port = db_port
+
+        # Added storage paths
+        self.storage_dir = "src/servers/uploaded_games"
+        self.temp_dir = "src/servers/lobby_tmp"
+        os.makedirs(self.temp_dir, exist_ok=True)
 
     def start(self):
         self.server_socket = create_tcp_passive_socket(self.host, self.port)
@@ -124,7 +131,7 @@ class MultiThreadedServer:
             self.sending_flag[user_id] = False
 
     # -------------------------------------------------------
-    # Main Client Loop (Refactored)
+    # Main Client Loop
     # -------------------------------------------------------
     def _client_handler(self, user_port, client_sock):
         print(f"[DEBUG] handler started for {user_port}")
@@ -134,7 +141,6 @@ class MultiThreadedServer:
         with client_sock:
             while self.is_running:
                 try:
-                    # Note: We ignore filepath as server doesn't process incoming files here
                     msg, _ = recv_file(client_sock, "temp", timeout=20)
                     if msg is None:
                         continue
@@ -144,30 +150,22 @@ class MultiThreadedServer:
                 print(f"[DEBUG] msg from {user_port}: {msg}")
 
                 op = msg.get("op")
-                
-                # 1. Validation
                 if not op:
                     self._send_error(client_sock, user_id, "unknown", "Missing 'op' field")
                     continue
 
                 handler_info = OP_REGISTRY.get(op)
                 
-                # 2. Unknown Operation
                 if not handler_info:
                     self._send_error(client_sock, user_id, op, f"Unknown op '{op}'")
                     continue
 
-                # 3. Authentication Check
                 if handler_info["auth_required"] and user_id is None:
                     self._send_error(client_sock, user_id, op, "Login required")
                     continue
 
-                # 4. Dispatch
-                # Standard signature: (msg, user_id, client_sock, db)
-                # Returns: (new_user_id, keep_connected)
                 try:
                     func = handler_info["func"]
-                    # Call the method bound to 'self'
                     new_id, keep_connected = func(self, msg, user_id, client_sock, db)
                     
                     if new_id is not None:
@@ -203,8 +201,7 @@ class MultiThreadedServer:
             send_json(sock, payload)
 
     # ==========================================
-    # Handlers (Decorated)
-    # Return: (new_user_id, keep_connected)
+    # Handlers
     # ==========================================
 
     @handle_op("print_sockets", auth_required=False)
@@ -275,7 +272,6 @@ class MultiThreadedServer:
 
     @handle_op("logout", auth_required=True)
     def _logout_user(self, msg, user_id, client_sock, db: DatabaseClient):
-        # 1. Leave room logic
         try:
             in_room = db.check_user_in_room(user_id)
             if in_room:
@@ -284,19 +280,17 @@ class MultiThreadedServer:
                 if not users_in_room:
                     db.delete_room(room_id[0][0])
             
-            # 2. Cleanup invites/requests
             db.delete_room_by_hostid(user_id)
             db.remove_invite_by_toid(user_id)
             db.remove_invite_by_fromid(user_id)
             db.remove_request_by_fromid(user_id)
             db.remove_request_by_toid(user_id)
             
-            # 3. Status update
             db.update_user(user_id, status="offline")
-            return None, False  # Disconnect
+            return None, False
         except Exception as e:
             print(f"Logout error: {e}")
-            return user_id, False # Disconnect anyway
+            return user_id, False
 
     @handle_op("list_rooms", auth_required=True)
     def _list_rooms(self, msg, user_id, client_sock, db: DatabaseClient):
@@ -314,7 +308,7 @@ class MultiThreadedServer:
                 })
             self.send_to_client_async(user_id, {"status": "ok", "op": "list_rooms", "rooms": room_list})
         except Exception as e:
-            print(e)
+            self.send_to_client_async(user_id, {"status": "error", "op": "list_rooms", "error": str(e)})
         return user_id, True
 
     @handle_op("list_online_users", auth_required=True)
@@ -515,6 +509,144 @@ class MultiThreadedServer:
             self.send_to_client_async(user_id, {"status": "error", "op": "list_request", "error": str(e)})
         return user_id, True
 
+    @handle_op("list_games", auth_required=True)
+    def _list_games(self, msg, user_id, client_sock, db: DatabaseClient):
+        try:
+            games = db.list_all_games()
+            game_list = []
+            if games:
+                for g in games:
+                    game_list.append({"game_id": g[0], "name": g[1]})
+            
+            self.send_to_client_async(user_id, {"status": "ok", "op": "list_games", "games": game_list})
+        except Exception as e:
+            self.send_to_client_async(user_id, {"status": "error", "op": "list_games", "error": str(e)})
+        return user_id, True
+
+    @handle_op("show_game_data", auth_required=True)
+    def _show_game_data(self, msg, user_id, client_sock, db: DatabaseClient):
+        target_id = msg.get("game_id")
+        if not target_id:
+            self.send_to_client_async(user_id, {"status": "error", "op": "show_game_data", "error": "Missing 'game_id'"})
+            return user_id, True
+
+        try:
+            game_data = db.get_game_by_id(target_id)
+            if not game_data:
+                self.send_to_client_async(user_id, {"status": "error", "op": "show_game_data", "error": "Game not found"})
+            else:
+                row = game_data[0]
+                response_data = {
+                    "id": row[0], "name": row[1], "description": row[2], 
+                    "owner_id": row[3], "latest_version": row[4]
+                }
+                self.send_to_client_async(user_id, {"status": "ok", "op": "show_game_data", "data": response_data})
+        except Exception as e:
+            self.send_to_client_async(user_id, {"status": "error", "op": "show_game_data", "error": str(e)})
+        return user_id, True
+
+    @handle_op("show_comment", auth_required=True)
+    def _show_comment(self, msg, user_id, client_sock, db: DatabaseClient):
+        target_id = msg.get("game_id")
+        if not target_id:
+            self.send_to_client_async(user_id, {"status": "error", "op": "show_comment", "error": "Missing 'game_id'"})
+            return user_id, True
+
+        try:
+            comments = db.get_comments_by_game_id(target_id)
+            comment_list = []
+            if comments:
+                for c in comments:
+                    comment_list.append({
+                        "comment_id": c[0], "user_name": c[1], "content": c[2], 
+                        "score": c[3], "timestamp": c[4]
+                    })
+            self.send_to_client_async(user_id, {"status": "ok", "op": "show_comment", "comments": comment_list})
+        except Exception as e:
+            self.send_to_client_async(user_id, {"status": "error", "op": "show_comment", "error": str(e)})
+        return user_id, True
+
+    @handle_op("download_game", auth_required=True)
+    def _download_game(self, msg, user_id, client_sock, db: DatabaseClient):
+        game_name = msg.get("game_name")
+        if not game_name:
+            self.send_to_client_async(user_id, {"status": "error", "op": "download_game", "error": "Missing game_name"})
+            return user_id, True
+
+        # 1. Get Game Info
+        try:
+            game_rows = db.get_game_by_name(game_name)
+            if not game_rows:
+                self.send_to_client_async(user_id, {"status": "error", "op": "download_game", "error": "Game not found"})
+                return user_id, True
+            
+            owner_id = game_rows[0][3]
+            latest_version = game_rows[0][4]
+        except Exception as e:
+            self.send_to_client_async(user_id, {"status": "error", "op": "download_game", "error": f"DB Error: {e}"})
+            return user_id, True
+
+        # 2. Locate Files
+        source_path = get_game_location(self.storage_dir, owner_id, game_name, latest_version)
+        if not os.path.exists(source_path):
+             self.send_to_client_async(user_id, {"status": "error", "op": "download_game", "error": "Game files missing on server"})
+             return user_id, True
+
+        # 3. Staging for Zip (Client folder + config.json ONLY)
+        staging_dir = os.path.join(self.temp_dir, f"stage_{user_id}_{game_name}")
+        if os.path.exists(staging_dir):
+            shutil.rmtree(staging_dir)
+        os.makedirs(staging_dir)
+
+        try:
+            # Copy client folder
+            client_src = os.path.join(source_path, "client")
+            if os.path.exists(client_src):
+                shutil.copytree(client_src, os.path.join(staging_dir, "client"))
+            
+            # Copy config.json
+            config_src = os.path.join(source_path, "config.json")
+            if os.path.exists(config_src):
+                shutil.copy(config_src, staging_dir)
+
+            # 4. Zip it
+            zip_base_name = os.path.join(self.temp_dir, f"pkg_{user_id}_{game_name}")
+            archive_path = shutil.make_archive(zip_base_name, 'zip', staging_dir)
+            
+            # 5. Send File (Thread-safe)
+            # Acquire lock because send_file writes directly to socket
+            with self.cond:
+                while self.sending_flag.get(user_id, False):
+                    self.cond.wait()
+                self.sending_flag[user_id] = True
+
+            try:
+                metadata = {
+                    "status": "ok",
+                    "op": "download_game",
+                    "game_name": game_name,
+                    "version": latest_version
+                }
+                send_file(client_sock, archive_path, metadata)
+            except Exception as e:
+                print(f"Error sending file: {e}")
+            finally:
+                with self.cond:
+                    self.sending_flag[user_id] = False
+                    self.cond.notify_all()
+
+        except Exception as e:
+            print(f"Error zipping/staging: {e}")
+            self.send_to_client_async(user_id, {"status": "error", "op": "download_game", "error": str(e)})
+        finally:
+            # 6. Cleanup
+            if os.path.exists(staging_dir):
+                shutil.rmtree(staging_dir)
+            if 'archive_path' in locals() and os.path.exists(archive_path):
+                os.remove(archive_path)
+
+        return user_id, True
+
     @handle_op("start", auth_required=True)
     def _start_game(self, msg, user_id, client_sock, db: DatabaseClient):
         print(f"[DEBUG] received start op from user {user_id}")
@@ -559,9 +691,8 @@ class MultiThreadedServer:
             )
             monitor_thread.start()
             
-            # Important: sleep briefly to ensure message sends before disconnect
             sleep(0.05)
-            return user_id, False # Disconnect to switch to game server
+            return user_id, False # Disconnect
             
         except Exception as e:
             print(f"Start game error: {e}")
@@ -571,7 +702,7 @@ class MultiThreadedServer:
     # -------------------------------------------------------
     # Monitors
     # -------------------------------------------------------
-    def _gameserver_monitor(self, process:subprocess.Popen[bytes], room_id, gamelog_id):
+    def _gameserver_monitor(self, process, room_id, gamelog_id):
         db = DatabaseClient(self.db_host, self.db_port)
         try:
             stdout_data, stderr_data = process.communicate()

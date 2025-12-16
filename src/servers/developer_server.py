@@ -333,7 +333,7 @@ class GameShopServer:
             #insert version
             version_id = db.insert_game_version(game_id[0][0], version, command)
             #clear garbage if any
-            dest_path = get_game_location(userId, game_name, version)
+            dest_path = get_game_location(self.storage_dir,userId, game_name, version)
             if os.path.exists(dest_path): shutil.rmtree(dest_path)
             shutil.move(target_root, dest_path)
             TCPutils.send_json(conn, {"status": "OK", "op":"handle_upload" ,  "message": f"Uploaded {game_name} v{version}"})
@@ -455,7 +455,7 @@ class GameShopServer:
                 db.delete_game_version_by_id(target_version_id)
                 
                 # 3. Delete physical files for this version
-                version_path = get_game_location(userid, game_name, version_to_remove)
+                version_path = get_game_location(self.storage_dir,userid, game_name, version_to_remove)
                 if os.path.exists(version_path):
                     shutil.rmtree(version_path)
 
@@ -466,7 +466,7 @@ class GameShopServer:
                 if not remaining_versions:
                     # No versions left -> Delete the Game entirely
                     db.delete_game_by_id(game_id)
-                    game_root_path = get_game_location(userid, game_name)
+                    game_root_path = get_game_location(self.storage_dir,userid, game_name)
                     if os.path.exists(game_root_path):
                         shutil.rmtree(game_root_path)
                     msg = f"Removed version {version_to_remove}. No versions left, game deleted."

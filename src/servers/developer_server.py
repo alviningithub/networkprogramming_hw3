@@ -15,10 +15,10 @@ from DBclient import DatabaseClient, DBclientException
 
 #db info
 load_dotenv()
-DB_IP = os.getenv("DB_IP")
-DB_PORT = int(os.getenv("DB_PORT")) 
-DEVELOPER_SERVER_PORT = int(os.getenv("DEVELOPER_SERVER_PORT"))
-DEVELOPER_SERVER_IP = os.getenv("DEVELOPER_SERVER_IP")
+DB_IP = os.getenv("DB_IP","140.113.17.11")
+DB_PORT = int(os.getenv("DB_PORT","16384")) 
+DEVELOPER_SERVER_PORT = int(os.getenv("DEVELOPER_SERVER_PORT","140.113.17.13"))
+DEVELOPER_SERVER_IP = os.getenv("DEVELOPER_SERVER_IP","16385")
 
 # --- Decorator for Dispatching ---
 HANDLER_REGISTRY = {}

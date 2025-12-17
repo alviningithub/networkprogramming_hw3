@@ -8,9 +8,9 @@ import threading
 
 load_dotenv()
 db_host = socket.gethostbyname(socket.gethostname())
-db_path = os.getenv("DB_PATH")
-db_port = int(os.getenv("DB_PORT"))
-db_ip = os.getenv("DB_IP")
+db_path = os.getenv("DB_PATH","src/database/data/database.db")
+db_port = int(os.getenv("DB_PORT","16384"))
+db_ip = os.getenv("DB_IP","140.113.17.11")
 
 ##############################################
 # Database Service

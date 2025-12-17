@@ -14,9 +14,9 @@ import utils.TCPutils as TCPutils
 load_dotenv()
 
 # Configuration
-SERVER_IP = os.getenv("SERVER_IP", "127.0.0.1")
-SERVER_PORT = int(os.getenv("DEVELOPER_SERVER_PORT", 8000))
-GAMES_DIR = "src/developer_client/games"
+SERVER_IP = os.getenv("SERVER_IP", "140.113.17.13")
+SERVER_PORT = int(os.getenv("DEVELOPER_SERVER_PORT", 16385))
+GAMES_DIR = os.getenv("GAMES_DIR","src/developer_client/games")
 
 class CancelAction(Exception):
     """Custom exception to jump back to the main menu."""

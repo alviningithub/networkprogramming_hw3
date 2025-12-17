@@ -597,27 +597,39 @@ class MultiThreadedServer:
              self.send_to_client_async(user_id, {"status": "error", "op": "download_game", "error": "Game files missing on server"})
              return user_id, True
 
-        # 3. Staging for Zip (Client folder + config.json ONLY)
+        # 3. Staging for Zip
         staging_dir = os.path.join(self.temp_dir, f"stage_{user_id}_{game_name}")
         if os.path.exists(staging_dir):
             shutil.rmtree(staging_dir)
         os.makedirs(staging_dir)
 
         try:
+            # --- COPY CLIENT FOLDER ---
             client_src = os.path.join(source_path, "client")
             if os.path.exists(client_src):
                 shutil.copytree(client_src, os.path.join(staging_dir, "client"))
             
+            # --- COPY CONFIG ---
             config_src = os.path.join(source_path, "config.json")
             if os.path.exists(config_src):
                 shutil.copy(config_src, staging_dir)
+
+            # --- NEW: COPY DEPENDENCY FILES ---
+            # These are required for 'uv run' to work on the client side
+            toml_src = os.path.join(source_path, "pyproject.toml")
+            if os.path.exists(toml_src):
+                shutil.copy(toml_src, staging_dir)
+            
+            lock_src = os.path.join(source_path, "uv.lock")
+            if os.path.exists(lock_src):
+                shutil.copy(lock_src, staging_dir)
+            # ----------------------------------
 
             # 4. Zip it
             zip_base_name = os.path.join(self.temp_dir, f"pkg_{user_id}_{game_name}")
             archive_path = shutil.make_archive(zip_base_name, 'zip', staging_dir)
             
             # 5. Send File (Thread-safe)
-            # Acquire lock because send_file writes directly to socket
             with self.cond:
                 while self.sending_flag.get(user_id, False):
                     self.cond.wait()
@@ -630,6 +642,7 @@ class MultiThreadedServer:
                     "game_name": game_name,
                     "version": latest_version
                 }
+                # Using your existing send_file utility
                 send_file(client_sock, archive_path, metadata)
             except Exception as e:
                 print(f"Error sending file: {e}")
@@ -749,8 +762,9 @@ class MultiThreadedServer:
 
 if __name__ == "__main__":
     load_dotenv()
-    db_port = int(os.getenv("DB_PORT", 20000))
-    db_host = os.getenv("DB_IP", "127.0.0.1")
-    lobby_host = os.getenv("LOBBY_IP", "127.0.0.1")
-    server = MultiThreadedServer(lobby_host, 20012, db_host, db_port)
+    db_port = int(os.getenv("DB_PORT", "16384"))
+    db_host = os.getenv("DB_IP", "140.113.17.11")
+    lobby_host = os.getenv("LOBBY_IP", "140.113.17.12")
+    lobby_port = int(os.getenv("LOBBY_PORT","20012"))
+    server = MultiThreadedServer(lobby_host, lobby_port, db_host, db_port)
     server.start()

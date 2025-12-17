@@ -8,15 +8,17 @@ import sys
 import re
 import subprocess
 from time import sleep
+from dotenv import load_dotenv
 
 # Import your provided utils including the Exception
 from utils.TCPutils import send_json, recv_file, ConnectionClosedByPeer
 
 # Configuration
-HOST = "127.0.0.1"
-PORT = 20012
-TEMP_DIR = "src/client/client_tmp"  # Where raw downloads land first
-DOWNLOAD_BASE_DIR = "src/client/downloads"
+load_dotenv()
+HOST = os.getenv("LOBBY_IP","140.113.17.12")
+PORT = os.getenv("LOBBY_PORT","20012")
+TEMP_DIR = os.getenv("TEMP_DIR","src/client/client_tmp")  # Where raw downloads land first
+DOWNLOAD_BASE_DIR = os.getenv("DOWNLOAD_BASE_DIR","src/client/downloads")
 
 class GameClient:
     def __init__(self):
@@ -314,6 +316,7 @@ class GameClient:
         elif choice == '' and self.wait_for_enter:
             self.start_game_event.set()
             self.game_set_event.wait()
+            self.menu_stack.append(self.menu_restart)
 
 
     # --- 2.1 Lobby Status ---
@@ -339,6 +342,7 @@ class GameClient:
         elif choice == '' and self.wait_for_enter:
             self.start_game_event.set()
             self.game_set_event.wait()
+            self.menu_stack.append(self.menu_restart)
 
     # --- 2.2 Game Store ---
     def menu_game_store(self):
@@ -367,6 +371,7 @@ class GameClient:
         elif choice == '' and self.wait_for_enter:
             self.start_game_event.set()
             self.game_set_event.wait()
+            self.menu_stack.append(self.menu_restart)
 
     def _print_games(self):
         resp, _ = self.send_request({"op": "list_games"})
@@ -592,6 +597,34 @@ class GameClient:
         elif choice == '' and self.wait_for_enter:
             self.start_game_event.set()
             self.game_set_event.wait()
+            self.menu_stack.append(self.menu_restart)
+    
+    def menu_restart(self):
+        print("\n=== Game Over ===")
+        print("1. Restart Game")
+        print("2. Back to Room")
+        choice = input("Select: ").strip()
+
+        if choice == '1':
+            # 1. Send start request exactly like in the room menu
+            resp, _ = self.send_request({"op": "start"})
+            if resp and resp.get("status") == "error":
+                print(f"Error: {resp.get('error')}")
+            
+            # Note: The listener will catch the "start" notification 
+            # and print "Press Enter". The logic below handles that Enter press.
+
+        elif choice == '2':
+            # Pop this menu, returning the user to the previous menu (menu_room)
+            self.go_back()
+
+        # Handle the synchronization for the Restart case
+        elif choice == '' and self.wait_for_enter:
+            self.start_game_event.set()
+            self.game_set_event.wait()
+            # Game finished again. We don't need to append menu_restart
+            # because we are already IN menu_restart. The loop will just 
+            # show this menu again, creating the cycle you want.
 
 if __name__ == "__main__":
     # Ensure temp dirs exist

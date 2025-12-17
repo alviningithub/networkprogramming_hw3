@@ -15,7 +15,7 @@ Or you can goto [UV installation page](https://docs.astral.sh/uv/getting-started
 # setup 
 There are four folder inside the `src` file. For each folder, go inside and copy `.env example`, rename it into `.env`, fill up the data you need.
 
->[!Note]Note
+> [!NOTE]
 > If this is Network programming demo, we don't need to setup because the default values have already setup.
 
 Just in case, you can run `uv sync` at the root of the repo.
@@ -34,8 +34,10 @@ uv run src/servers/lobby.py
 ```bash
 uv run src/servers/developer_server.py
 ```
->[!Caution]Caution
->lobby and developer_server must run on the same machine
+
+> [!CAUTION]
+> lobby and developer_server must run on the same machine.
+
 5. run client2.0.py
 ```bash
 uv run src/client/client2.0.py

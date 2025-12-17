@@ -741,22 +741,37 @@ class MultiThreadedServer:
             self.send_to_client_async(user_id, {"status": "error", "op": "start", "error": str(e)})
             return user_id, True
 
-    def _gameserver_monitor(self, process:subprocess.Popen[str], room_id):
-        db = DatabaseClient(self.db_host, self.db_port)
+    def _gameserver_monitor(self, process: subprocess.Popen, room_id):
+        
+        # 1. communicate() waits for the process to exit
+        # It reads all stdout/stderr and closes the pipes automatically.
         try:
             stdout_data, stderr_data = process.communicate()
         except Exception as e:
-            print(f"[Monitor] Error: {e}")
+            print(f"[Monitor] Error during communicate: {e}")
             return
-        print("[DEBUG]"+ stdout_data)
-        print("[DEBUG]"+stderr_data)
+
+        # 2. Log output if needed
+        if stdout_data:
+            print(f"[DEBUG Game {room_id} STDOUT]: {stdout_data.strip()}")
+        if stderr_data:
+            print(f"[DEBUG Game {room_id} STDERR]: {stderr_data.strip()}")
+
+        # 3. Update DB
+        db = DatabaseClient(self.db_host, self.db_port)
         try:
             db.update_room(room_id, status="idle")
         except Exception as e:
             print(f"Failed to update room status: {e}")
-        process.stdout.close()
-        process.stderr.close()
-        if process.stdin: process.stdin.close()
+            
+        # 4. Cleanup
+        # DO NOT call process.stdout.close() here, communicate() already did it.
+        if process.stdin: 
+            try:
+                process.stdin.close()
+            except:
+                pass
+                
         print(f"[Monitor] Game server for room {room_id} exited cleanly.")
         db.close()
 

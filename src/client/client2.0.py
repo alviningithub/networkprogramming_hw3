@@ -16,7 +16,7 @@ from utils.TCPutils import send_json, recv_file, ConnectionClosedByPeer
 # Configuration
 load_dotenv()
 HOST = os.getenv("LOBBY_IP","140.113.17.12")
-PORT = os.getenv("LOBBY_PORT","20012")
+PORT = int(os.getenv("LOBBY_PORT","20012"))
 TEMP_DIR = os.getenv("TEMP_DIR","src/client/client_tmp")  # Where raw downloads land first
 DOWNLOAD_BASE_DIR = os.getenv("DOWNLOAD_BASE_DIR","src/client/downloads")
 

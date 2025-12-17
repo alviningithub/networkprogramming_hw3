@@ -14,7 +14,7 @@ import utils.TCPutils as TCPutils
 load_dotenv()
 
 # Configuration
-SERVER_IP = os.getenv("SERVER_IP", "140.113.17.13")
+SERVER_IP = os.getenv("DEVELOPER_SERVER_IP", "140.113.17.12")
 SERVER_PORT = int(os.getenv("DEVELOPER_SERVER_PORT", 16385))
 GAMES_DIR = os.getenv("GAMES_DIR","src/developer_client/games")
 

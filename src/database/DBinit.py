@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-db_path = os.getenv("DB_PATH")
+db_path = os.getenv("DB_PATH","src/database/data/database.db")
 
 
 def initialize_database(db_path: str):

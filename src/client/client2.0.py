@@ -6,6 +6,7 @@ import shutil
 import zipfile
 import sys
 import re
+import subprocess
 from time import sleep
 
 # Import your provided utils including the Exception
@@ -32,6 +33,10 @@ class GameClient:
         self.response_event = threading.Event()
         self.latest_response = {}
         self.latest_file_path = None
+
+        self.start_game_event = threading.Event()
+        self.game_set_event = threading.Event()
+        self.wait_for_enter = False
 
     def connect(self):
         try:
@@ -80,8 +85,18 @@ class GameClient:
                     if op == "receive_invite":
                         print(f"   -> Invite from {metadata.get('fromName')} (Room {metadata.get('roomId')})")
                     elif op == "start":
+                        status = metadata.get("status")
+                        if status == "error":
+                            self.latest_response = metadata
+                            self.latest_file_path = file_path
+                            self.response_event.set()
+                            continue
                         print(f"   -> GAME STARTING on {metadata.get('game_server_ip')}:{metadata.get('game_server_port')}")
                         # Note: In a real implementation, you would launch the game process here.
+                        ip = metadata.get("game_server_ip")
+                        port = metadata.get("game_server_port")
+                        game_name =  metadata.get("game_name")
+                        self._start_game(ip,port,game_name)
                     elif op == "request_accepted":
                          # If *I* am the one requesting, and I get accepted, I need to switch to Room Mode
                          rid = metadata.get("roomId")
@@ -125,6 +140,30 @@ class GameClient:
             return None, None
         
         return self.latest_response, self.latest_file_path
+
+    #start game logic
+    def _start_game(self,ip,port,game_name):
+        self.game_set_event.clear()
+        self.start_game_event.clear()
+        self.wait_for_enter = True
+        print("\n\n\nPress Enter To Start the Game (Enter)")
+        self.response_event.set()
+        self.start_game_event.wait()
+        # after press enter
+        self.wait_for_enter = False
+        gamepath = os.path.join(DOWNLOAD_BASE_DIR, str(self.user_id), game_name)
+        cwd = os.getcwd()
+        os.chdir(gamepath)
+        game_client = subprocess.Popen(
+            ["uv","run","client/client_main.py",ip,str(port),str(self.user_id),str(self.username)],
+            text=True
+        )
+        os.chdir(cwd)
+        game_client.communicate()
+        self.game_set_event.set()
+
+
+
 
     # ---------------------------------------------------------
     # Specific File Handling Logic
@@ -272,6 +311,10 @@ class GameClient:
             self.user_id = None
             self.current_room_id = None
             self.go_back()
+        elif choice == '' and self.wait_for_enter:
+            self.start_game_event.set()
+            self.game_set_event.wait()
+
 
     # --- 2.1 Lobby Status ---
     def menu_lobby_status(self):
@@ -293,6 +336,9 @@ class GameClient:
                 print(f"Room {r['roomId']}: {r['name']} | Game: {r.get('gameName', 'Unknown')} (Host: {r['hostId']}, Status: {r['status']})")
         elif choice == '3':
             self.go_back()
+        elif choice == '' and self.wait_for_enter:
+            self.start_game_event.set()
+            self.game_set_event.wait()
 
     # --- 2.2 Game Store ---
     def menu_game_store(self):
@@ -318,6 +364,9 @@ class GameClient:
             self._handle_download()
         elif choice == '4':
             self.go_back()
+        elif choice == '' and self.wait_for_enter:
+            self.start_game_event.set()
+            self.game_set_event.wait()
 
     def _print_games(self):
         resp, _ = self.send_request({"op": "list_games"})
@@ -489,9 +538,15 @@ class GameClient:
         elif choice == '5':
             self.go_back()
 
+        elif choice == '' and self.wait_for_enter:
+            self.start_game_event.set()
+            self.game_set_event.wait()
+
     def _handle_in_room_actions(self, choice):
         if choice == '1':
             resp, _ = self.send_request({"op": "start"})
+            if resp is None:
+                return
             if resp.get("status") == "error":
                 print(f"Cannot start: {resp.get('error')}")
             # Successful start is handled by async notification "start" in listener
@@ -533,6 +588,10 @@ class GameClient:
 
         elif choice == '5':
             self.go_back()
+
+        elif choice == '' and self.wait_for_enter:
+            self.start_game_event.set()
+            self.game_set_event.wait()
 
 if __name__ == "__main__":
     # Ensure temp dirs exist

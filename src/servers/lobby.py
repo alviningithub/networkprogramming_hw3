@@ -664,66 +664,83 @@ class MultiThreadedServer:
             if len(room_users) < 2:
                 self.send_to_client_async(user_id, {"status": "error", "op": "start", "error": "Not enough players"})
                 return user_id, True
-
+            # get game info
+            room = db.get_room_by_id(roomId)
+            gameid = room[0][5]
+            game = db.get_game_by_id(gameid)
+            ownerid = game[0][3]
+            game_name = game[0][1]
+            LatestVersion = game[0][4]
+            gamefolder = get_game_location(self.storage_dir,ownerid,game_name,LatestVersion)
+            path = os.getcwd()
+            os.chdir(gamefolder)    
             print("[DEBUG] creating process")
             game_server_process = subprocess.Popen(
-                ["python", "-u", "tetris_server.py"], 
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                ["uv","run","server/server_main.py"], 
+                stdin=subprocess.PIPE, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1
             )
-            
-            port_line = game_server_process.stdout.readline().decode().strip()
+            os.chdir(path)
+            room_user_ids = [id for id,name in room_users]
+            message_to_gameserver = {
+                "ip":self.host,
+                "n_users": len(room_users),
+                "userIDs":room_user_ids
+            }
+            print("[DEBUG] message_to_gameserver")
+            print(message_to_gameserver)
+            input_string = json.dumps(message_to_gameserver) + "\n"
+            game_server_process.stdin.write(input_string)
+            game_server_process.stdin.flush()
+            game_server_process.stdin.close()
+
+            #wait for the data
+            port_line = game_server_process.stdout.readline().strip()
             print(f"[DEBUG] Game server output: {port_line}")
             game_port = int(port_line.split()[-1])
 
             db.update_room(roomId, status="playing")
-            gamelog = db.create_gamelog(roomId)
 
             for user in room_users:
                 self.send_to_client_async(user[0], {
                     "status": "ok", 
                     "op": "start", 
                     "game_server_ip": self.host, 
-                    "game_server_port": game_port
+                    "game_server_port": game_port,
+                    "game_name":game_name
                 })
 
             monitor_thread = threading.Thread(
                 target=self._gameserver_monitor, 
-                args=(game_server_process, roomId, gamelog[0][0]), 
+                args=(game_server_process, roomId), 
                 daemon=True
             )
             monitor_thread.start()
             
             sleep(0.05)
-            return user_id, False 
+            return user_id, True 
             
         except Exception as e:
             print(f"Start game error: {e}")
             self.send_to_client_async(user_id, {"status": "error", "op": "start", "error": str(e)})
             return user_id, True
 
-    def _gameserver_monitor(self, process, room_id, gamelog_id):
+    def _gameserver_monitor(self, process:subprocess.Popen[str], room_id):
         db = DatabaseClient(self.db_host, self.db_port)
         try:
             stdout_data, stderr_data = process.communicate()
         except Exception as e:
             print(f"[Monitor] Error: {e}")
             return
-
+        print("[DEBUG]"+ stdout_data)
+        print("[DEBUG]"+stderr_data)
         try:
             db.update_room(room_id, status="idle")
         except Exception as e:
             print(f"Failed to update room status: {e}")
-
-        for line in stdout_data.decode().splitlines():
-            if not line.strip(): continue
-            try:
-                data = json.loads(line.strip())
-                uid = int(data.get("userId"))
-                score = int(data.get("score"))
-                db.update_gamelog(gamelog_id, uid, score)
-            except Exception:
-                continue
-
         process.stdout.close()
         process.stderr.close()
         if process.stdin: process.stdin.close()

@@ -699,8 +699,8 @@ class MultiThreadedServer:
             os.chdir(path)
             room_user_ids = [id for id,name in room_users]
             message_to_gameserver = {
-                "ip":self.host,
-                "n_users": len(room_users),
+                "ip_address":self.host,
+                "users": len(room_users),
                 "userIDs":room_user_ids
             }
             print("[DEBUG] message_to_gameserver")

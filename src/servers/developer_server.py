@@ -17,8 +17,8 @@ from DBclient import DatabaseClient, DBclientException
 load_dotenv()
 DB_IP = os.getenv("DB_IP","140.113.17.11")
 DB_PORT = int(os.getenv("DB_PORT","16384")) 
-DEVELOPER_SERVER_PORT = int(os.getenv("DEVELOPER_SERVER_PORT","140.113.17.12"))
-DEVELOPER_SERVER_IP = os.getenv("DEVELOPER_SERVER_IP","16385")
+DEVELOPER_SERVER_PORT = int(os.getenv("DEVELOPER_SERVER_PORT","16385"))
+DEVELOPER_SERVER_IP = os.getenv("DEVELOPER_SERVER_IP","140.113.17.12")
 
 # --- Decorator for Dispatching ---
 HANDLER_REGISTRY = {}

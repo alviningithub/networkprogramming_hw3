@@ -1,0 +1,4 @@
+LOBBY_IP=
+LOBBY_PORT=
+TEMP_DIR=src/client/client_tmp
+DOWNLOAD_BASE_DIR=src/client/downloads

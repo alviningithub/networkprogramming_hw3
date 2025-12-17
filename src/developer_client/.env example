@@ -1,0 +1,3 @@
+DEVELOPER_SERVER_IP=
+DEVELOPER_SERVER_PORT=
+GAMES_DIR=src/developer_client/games

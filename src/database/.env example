@@ -1,0 +1,3 @@
+DB_PATH=src/database/data/database.db
+DB_IP=
+DB_PORT=

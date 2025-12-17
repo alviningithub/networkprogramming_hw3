@@ -17,6 +17,11 @@ utils = { workspace = true }
 members = [
     "utils",
 ]
+exclude = [
+    "src/developer_client/games/*",
+    "src/servers/uploaded_games/*",
+    "src/client/downloads/*", 
+]
 
 [dependency-groups]
 dev = [

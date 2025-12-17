@@ -162,6 +162,44 @@ class GameClient:
             if os.path.exists(zip_path):
                 os.remove(zip_path)
 
+    def _check_local_version_match(self, game_id, game_name):
+        """
+        Feature 2 Check:
+        Verifies if the local installed version matches the server's latest version.
+        Returns True if match, False if mismatch or not installed.
+        """
+        # 1. Fetch Server Info
+        resp, _ = self.send_request({"op": "show_game_data", "game_id": game_id})
+        if not resp or resp.get("status") != "ok":
+            print("[Error] Could not verify game version with server.")
+            return False
+        
+        server_version = resp.get("data", {}).get("latest_version")
+        
+        # 2. Check Local Config
+        config_path = os.path.join(DOWNLOAD_BASE_DIR, str(self.user_id), game_name, "config.json")
+        local_version = None
+
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    data = json.load(f)
+                    local_version = data.get("version")
+            except Exception as e:
+                print(f"[Warning] Failed to read local config: {e}")
+
+        print(f"[Version Check] Game: {game_name} | Local: {local_version} | Server: {server_version}")
+
+        if local_version == server_version:
+            return True
+        else:
+            if local_version is None:
+                print(f"[Error] Game '{game_name}' is not installed.")
+            else:
+                print(f"[Error] Version mismatch. You have v{local_version}, but v{server_version} is required.")
+            print("Please go to the Game Store to download/update.")
+            return False
+
     # ---------------------------------------------------------
     # Menus
     # ---------------------------------------------------------
@@ -199,6 +237,14 @@ class GameClient:
         resp, _ = self.send_request({"op": op_code, "name": user, "passwordHash": pwd})
         
         if resp and resp.get("status") == "ok":
+            if op_code == "register":
+                # Feature 1: Don't login after register.
+                # Just print success and return to main menu so they can explicitly login.
+                # This ensures the server's state (status=online) is handled correctly during login.
+                print(f"Registration successful! Please select 'Login' to continue.")
+                return 
+            
+            # Login Success
             self.user_id = resp.get("id")
             self.username = user
             print(f"Success! User ID: {self.user_id}")
@@ -243,7 +289,8 @@ class GameClient:
             resp, _ = self.send_request({"op": "list_rooms"})
             rooms = resp.get("rooms", [])
             for r in rooms:
-                print(f"Room {r['roomId']}: {r['name']} (Host: {r['hostId']}, Status: {r['status']})")
+                # Updated to display Game Type (Feature 2)
+                print(f"Room {r['roomId']}: {r['name']} | Game: {r.get('gameName', 'Unknown')} (Host: {r['hostId']}, Status: {r['status']})")
         elif choice == '3':
             self.go_back()
 
@@ -284,10 +331,22 @@ class GameClient:
         games = self._print_games()
         if not games: return
 
-        target_name = input("Enter exact Game Name to download: ").strip()
+        # Feature 3: download game use id, not name
+        target_id = input("Enter Game ID to download: ").strip()
         
-        print("Downloading... (Please wait)")
-        # Request download
+        # Resolve ID to Name
+        target_name = None
+        for g in games:
+            if str(g['game_id']) == target_id:
+                target_name = g['name']
+                break
+        
+        if not target_name:
+            print("Error: Invalid Game ID.")
+            return
+
+        print(f"Downloading {target_name}... (Please wait)")
+        # Request download using the resolved name
         resp, file_path = self.send_request({"op": "download_game", "game_name": target_name})
         
         if resp.get("status") == "ok" and file_path:
@@ -327,8 +386,18 @@ class GameClient:
             
             # Req 2: List games right before inputting Game ID
             print("Select a game for this room:")
-            self._print_games()
+            games = self._print_games()
             g_id = input("Game ID: ")
+            
+            # Feature 2: Check version before creating
+            # Need to find game name to check local files
+            selected_game = next((g for g in games if str(g['game_id']) == g_id), None)
+            if not selected_game:
+                print("Invalid Game ID.")
+                return
+
+            if not self._check_local_version_match(g_id, selected_game['name']):
+                return # Abort creation
             
             vis = input("Visibility (public/private): ")
             resp, _ = self.send_request({
@@ -347,7 +416,7 @@ class GameClient:
             if resp.get("status") == "ok":
                 print("Available Rooms:")
                 for r in rooms:
-                    print(f"ID: {r['roomId']} | Name: {r['name']}")
+                    print(f"ID: {r['roomId']} | Name: {r['name']} | Game: {r.get('gameName', 'Unknown')}")
             else:
                 print("Error fetching rooms.")
                 return
@@ -355,10 +424,18 @@ class GameClient:
             rid = input("Room ID to join: ")
             
             # Validation
-            valid_rids = [str(r['roomId']) for r in rooms]
-            if rid not in valid_rids:
+            selected_room = next((r for r in rooms if str(r['roomId']) == rid), None)
+            if not selected_room:
                 print("Error: Room ID not found in the list.")
                 return
+
+            # Feature 2: Check version before joining
+            game_id = selected_room.get('gameId')
+            game_name = selected_room.get('gameName')
+            
+            if game_id and game_name:
+                if not self._check_local_version_match(game_id, game_name):
+                    return # Abort joining
 
             resp, _ = self.send_request({"op": "request", "room_id": rid})
             print(resp.get("message", resp.get("error")))
@@ -379,17 +456,27 @@ class GameClient:
             print("Pending Invitations:")
             # Format: {"roomId": i[0], "fromId": i[1], "fromName": i[2], "invite_id": i[3]}
             for inv in invites:
-                print(f"Invite ID: {inv['invite_id']} | From: {inv['fromName']} (ID: {inv['fromId']}) | Room: {inv['roomId']}")
+                print(f"Invite ID: {inv['invite_id']} | From: {inv['fromName']} (ID: {inv['fromId']}) | Room: {inv['roomId']} | Game: {inv.get('gameName', 'Unknown')}")
             
             i_id = input("Enter Invite ID to reply: ")
             
             # Validate Invite ID exists locally
-            valid_iids = [str(inv['invite_id']) for inv in invites]
-            if i_id not in valid_iids:
+            selected_invite = next((inv for inv in invites if str(inv['invite_id']) == i_id), None)
+            if not selected_invite:
                 print("Error: Invalid Invite ID.")
                 return
 
             dec = input("Accept? (y/n): ")
+            
+            # Feature 1 Check: Verify version on accept
+            if dec.lower() == 'y':
+                g_id = selected_invite.get('gameId')
+                g_name = selected_invite.get('gameName')
+                if g_id and g_name:
+                    if not self._check_local_version_match(g_id, g_name):
+                        print("Aborting invitation acceptance due to game version mismatch.")
+                        return
+
             response = "accept" if dec.lower() == 'y' else "decline"
             resp, _ = self.send_request({"op": "respond_invite", "invite_id": i_id, "response": response})
             print(resp.get("message", resp.get("error")))

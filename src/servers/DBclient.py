@@ -561,26 +561,6 @@ class DatabaseClient:
                 raise DBclientException(resp.get("error"))
         return resp
 
-    def get_comments_by_game_id(self, game_id: int) -> list[list]:
-        """
-        Returns comments for a specific game.
-        Joins with User table to get the username.
-        """
-        sql = """
-            SELECT C.id, U.name, C.content, C.score, C.timestamp 
-            FROM comment C 
-            JOIN User U ON C.userId = U.id 
-            WHERE C.gameId = ?
-            ORDER BY C.timestamp DESC
-        """
-        params = [game_id]
-        resp = self._send_request(sql, params)
-        if isinstance(resp, dict):
-            if resp.get("status") == "ok":
-                return resp.get("data")
-            else:
-                raise DBclientException(resp.get("error"))
-        return resp
     
     def insert_comment(self, game_id: int, user_id: int, content: str, score: int):
         """
@@ -599,3 +579,41 @@ class DatabaseClient:
             else:
                 raise DBclientException(resp.get("error"))
         return resp
+    
+    def get_average_score(self, game_id: int) -> float:
+        """
+        Returns the average score for a game. Returns 0.0 if no reviews exist.
+        """
+        sql = "SELECT AVG(score) FROM comment WHERE gameId = ?"
+        params = [game_id]
+        resp = self._send_request(sql, params)
+        if isinstance(resp, dict):
+            if resp.get("status") == "ok":
+                return resp.get("data")
+            else:
+                raise DBclientException(resp.get("error"))
+        return resp
+        
+
+    def get_comments_by_game_id(self, game_id: int):
+        """
+        Retrieves comments for a game, joining with the User table to get names.
+        Returns: [(comment_id, user_name, content, score, timestamp), ...]
+        """
+        
+        sql = """
+            SELECT c.id, u.name, c.content, c.score, c.timestamp 
+            FROM comment c
+            JOIN User u ON c.userId = u.id
+            WHERE c.gameId = ?
+            ORDER BY c.timestamp DESC
+        """
+        params = [game_id]
+        resp = self._send_request(sql, params)
+        if isinstance(resp, dict):
+            if resp.get("status") == "ok":
+                return resp.get("data")
+            else:
+                raise DBclientException(resp.get("error"))
+        return resp
+

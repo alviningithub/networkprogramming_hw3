@@ -205,15 +205,31 @@ class GameClient:
 
     def _check_local_version_match(self, game_id, game_name):
         """
-        Feature 2 Check:
+        Feature Check:
         Verifies if the local installed version matches the server's latest version.
-        Returns True if match, False if mismatch or not installed.
+        Returns True if match.
+        Returns False if mismatch, not installed, OR if the game was deleted from the server.
         """
         # 1. Fetch Server Info
         resp, _ = self.send_request({"op": "show_game_data", "game_id": game_id})
-        if not resp or resp.get("status") != "ok":
-            print("[Error] Could not verify game version with server.")
+        
+        if not resp:
+             print("[Error] No response from server.")
+             return False
+
+        # --- NEW LOGIC START ---
+        # If the server returns an error, it means the game ID is invalid 
+        # (likely deleted by a developer).
+        if resp.get("status") == "error":
+            err_msg = resp.get("error", "Unknown error")
+            print(f"\n[Error] Game Validation Failed: {err_msg}")
+            
+            # Specific message if the game is gone
+            if "not found" in err_msg.lower():
+                print(f"[System] Critical: The game '{game_name}' (ID: {game_id}) has been removed from the server.")
+                print("You cannot create rooms, join rooms, or accept invites for this game.")
             return False
+        # --- NEW LOGIC END ---
         
         server_version = resp.get("data", {}).get("latest_version")
         
@@ -235,9 +251,9 @@ class GameClient:
             return True
         else:
             if local_version is None:
-                print(f"[Error] Game '{game_name}' is not installed.")
+                print(f"[Error] Game '{game_name}' is not installed locally.")
             else:
-                print(f"[Error] Version mismatch. You have v{local_version}, but v{server_version} is required.")
+                print(f"[Error] Version mismatch. You have v{local_version}, but server requires v{server_version}.")
             print("Please go to the Game Store to download/update.")
             return False
 
@@ -391,18 +407,19 @@ class GameClient:
             self.menu_stack.append(self.menu_restart)
 
     # --- 2.2 Game Store ---
+    # --- 2.2 Game Store ---
     def menu_game_store(self):
         print("\n--- Game Store ---")
         print("1. List Available Games")
         print("2. Inspect Game Info")
         print("3. Download/Update Game")
         print("4. Back")
+        print("5. View Game Reviews")  # <--- NEW OPTION
         choice = input("Select: ").strip()
 
         if choice == '1':
             self._print_games()
         elif choice == '2':
-            # Req 1: List games before picking
             self._print_games()
             gid = input("Enter Game ID: ")
             resp, _ = self.send_request({"op": "show_game_data", "game_id": gid})
@@ -414,10 +431,60 @@ class GameClient:
             self._handle_download()
         elif choice == '4':
             self.go_back()
+        elif choice == '5':            # <--- NEW HANDLER
+            self._handle_view_comments()
         elif choice == '' and self.wait_for_enter:
             self.start_game_event.set()
             self.game_set_event.wait()
             self.menu_stack.append(self.menu_restart)
+
+    def _handle_view_comments(self):
+        print("\n--- View Game Reviews ---")
+        
+        # 1. List all games first
+        print("Fetching game list...")
+        games = self._print_games()
+        if not games:
+            print("No games available.")
+            return
+
+        # 2. Pick a Game
+        game_id = input("Enter Game ID: ").strip()
+        if not any(str(g['game_id']) == game_id for g in games):
+            print("Invalid Game ID.")
+            return
+
+        # 3. Limit the display number
+        limit_input = input("Max comments to display (default 5): ").strip()
+        limit = 5
+        if limit_input.isdigit():
+            limit = int(limit_input)
+
+        # 4. Fetch Data
+        print(f"Fetching reviews for Game ID {game_id}...")
+        resp, _ = self.send_request({"op": "show_comment", "game_id": game_id})
+
+        if not resp or resp.get("status") != "ok":
+            print(f"Error: {resp.get('error', 'Unknown error')}")
+            return
+
+        # 5. Display Data
+        avg = resp.get("average_score", 0.0)
+        comments = resp.get("comments", [])
+        
+        print(f"\n[Average Score]: {avg} / 5.0 ({len(comments)} total reviews)")
+        print(f"--- Recent {min(len(comments), limit)} Comments ---")
+
+        if not comments:
+            print("(No comments yet)")
+        else:
+            # Sort is already DESC from server, just slice
+            for i, c in enumerate(comments[:limit]):
+                print(f"[{c['timestamp']}] {c['user_name']} (Score: {c['score']})")
+                print(f"   > {c['content']}")
+                print("-" * 30)
+
+        input("\nPress Enter to continue...")
 
     def _print_games(self):
         resp, _ = self.send_request({"op": "list_games"})

@@ -556,23 +556,46 @@ class MultiThreadedServer:
     def _show_comment(self, msg, user_id, client_sock, db: DatabaseClient):
         target_id = msg.get("game_id")
         if not target_id:
-            self.send_to_client_async(user_id, {"status": "error", "op": "show_comment", "error": "Missing 'game_id'"})
+            self.send_to_client_async(user_id, {
+                "status": "error", 
+                "op": "show_comment", 
+                "error": "Missing 'game_id'"
+            })
             return user_id, True
 
         try:
+            # 1. Get Comments (using the JOIN query from DBclient)
             comments = db.get_comments_by_game_id(target_id)
             comment_list = []
             if comments:
                 for c in comments:
                     comment_list.append({
-                        "comment_id": c[0], "user_name": c[1], "content": c[2], 
-                        "score": c[3], "timestamp": c[4]
+                        "comment_id": c[0], 
+                        "user_name": c[1], # Now guaranteed to be the name
+                        "content": c[2], 
+                        "score": c[3], 
+                        "timestamp": c[4]
                     })
-            self.send_to_client_async(user_id, {"status": "ok", "op": "show_comment", "comments": comment_list})
-        except Exception as e:
-            self.send_to_client_async(user_id, {"status": "error", "op": "show_comment", "error": str(e)})
-        return user_id, True
+            
+            # 2. Get Average Score (NEW)
+            avg_score = db.get_average_score(target_id)
 
+            # 3. Send combined response
+            self.send_to_client_async(user_id, {
+                "status": "ok", 
+                "op": "show_comment", 
+                "comments": comment_list,
+                "average_score": round(avg_score[0][0], 1) # Rounded for cleaner UI
+            })
+
+        except Exception as e:
+            self.send_to_client_async(user_id, {
+                "status": "error", 
+                "op": "show_comment", 
+                "error": str(e)
+            })
+        
+        return user_id, True
     @handle_op("download_game", auth_required=True)
     def _download_game(self, msg, user_id, client_sock, db: DatabaseClient):
         game_name = msg.get("game_name")

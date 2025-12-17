@@ -1,4 +1,3 @@
-
 import socket
 import struct
 from utils.TCPutils import create_tcp_socket, send_json, recv_json
@@ -10,7 +9,6 @@ Room：{ id, name, hostUserId, visibility("public"|"private"), status("idle"|"pl
 in_room: {roomId, userId}
 request_join_list: {id, roomId, fromId,toId}
 game: {id, name, description, OwnerID, LatestVersion}
-
 """
 
 class DBclientException(Exception):
@@ -38,11 +36,13 @@ class DatabaseClient:
     def close(self):
         self.socket.close()
 
-
-
     def list_all_rooms(self):
-        """Convenient method to list all rooms from the database."""
-        sql = "SELECT * FROM Room"
+        """
+        List all rooms.
+        Returns: id, name, hostUserId, visibility, status, gameId, gameName
+        """
+        # Modified to join with Game table to get gameName
+        sql = "SELECT R.id, R.name, R.hostUserId, R.visibility, R.status, R.gameId, G.name FROM Room R JOIN Game G ON R.gameId = G.id"
         resp =  self._send_request(sql)
         if isinstance(resp, dict):
             if resp.get("status") == "ok":
@@ -56,11 +56,7 @@ class DatabaseClient:
         return self._send_request(sql, params)
     
     def find_user_by_name_and_password(self, name: str, passwordHash : str):
-        """Find a user by name. Returns the row(s) returned by the DB server.
-
-        Returns the raw `data` field from the DB server response when successful,
-        or raises an DBclientException when an error is returned.
-        """
+        """Find a user by name."""
         sql = "SELECT id, name, passwordHash,status, role FROM User WHERE name = ? AND passwordHash = ? LIMIT 1"
         resp = self._send_request(sql, [name,passwordHash])
         if isinstance(resp, dict):
@@ -71,11 +67,7 @@ class DatabaseClient:
         return resp
 
     def insert_user(self, name: str, password_hash: str,role: str):
-        """Insert a new user into the User table.
-
-        Returns the DB server `data` on success (e.g. rows_affected), or raises
-        an DBclientException on error.
-        """
+        """Insert a new user into the User table."""
         sql = "INSERT INTO User (name, passwordHash, role) VALUES (?, ?, ?)"
         params = [name, password_hash,role]
         resp = self._send_request(sql, params)
@@ -87,9 +79,7 @@ class DatabaseClient:
         return resp
     
     def update_user(self, user_id: int, name: str = None, password_hash: str = None, status: str = None):
-        """Update specified fields of a user by id. Only provided fields are updated.
-        Returns DB server `data` on success or raises DBclientException on error.
-        """
+        """Update specified fields of a user by id."""
         fields = []
         params = []
 
@@ -118,8 +108,8 @@ class DatabaseClient:
         return resp
     
     def list_online_users(self)-> list[list] :
-        """List all users with status 'online'."""
-        sql = "SELECT * FROM User WHERE status = 'online'"
+        """List all users with status 'online', excluding developers."""
+        sql = "SELECT * FROM User WHERE status = 'online' AND role != 'developer'"
         resp = self._send_request(sql)
         if isinstance(resp, dict):
             if resp.get("status") == "ok":
@@ -167,7 +157,6 @@ class DatabaseClient:
         params = [userId]
         resp = self._send_request(sql, params)
       
-
         if isinstance(resp, dict):
             if resp.get("status") == "ok":
                 return resp.get("data")
@@ -180,7 +169,6 @@ class DatabaseClient:
         params = [room_id]
         resp = self._send_request(sql, params)
   
-
         if isinstance(resp, dict):
             if resp.get("status") == "ok":
                 return resp.get("data")
@@ -193,7 +181,6 @@ class DatabaseClient:
         params = [room_id]
         resp = self._send_request(sql, params)
         
-
         if isinstance(resp, dict):
             if resp.get("status") == "ok":
                 return resp.get("data")
@@ -273,7 +260,6 @@ class DatabaseClient:
                 raise DBclientException(resp.get("error"))
             
     def get_room_by_id(self, room_id , status = None) -> list[list]:
-        
         sql = "SELECT * FROM Room WHERE id = ? "
         params = [room_id]
         if status is  not None:
@@ -316,7 +302,17 @@ class DatabaseClient:
                 raise DBclientException(resp.get("error"))
 
     def list_invites(self,user_id):
-        sql = "SELECT I.roomId, I.fromId, U.name as fromName , I.id FROM invite_list as I , User as U where I.fromId = U.id AND I.toId = ? "
+        """
+        Modified to return Room Name, Game ID, and Game Name.
+        """
+        sql = """
+            SELECT I.roomId, I.fromId, U.name as fromName, I.id, R.name as roomName, R.gameId, G.name as gameName
+            FROM invite_list as I
+            JOIN User as U ON I.fromId = U.id
+            JOIN Room as R ON I.roomId = R.id
+            JOIN Game as G ON R.gameId = G.id
+            WHERE I.toId = ?
+        """
         params = [user_id]
         resp = self._send_request(sql, params)
         if isinstance(resp, dict):
@@ -388,7 +384,6 @@ class DatabaseClient:
             else :
                 raise DBclientException(resp.get("error"))
 
-    
     def remove_request_by_toid(self,toid):
         sql = "DELETE FROM request_join_list WHERE toId = ? RETURNING * "
         params = [toid]
@@ -460,9 +455,8 @@ class DatabaseClient:
         if isinstance(resp, dict):
             if resp.get("status") == "ok":
                 return resp.get("data")
-            else:
+            else :
                 raise DBclientException(resp.get("error"))
-        return resp
             
     def get_version_by_gameid_and_version(self, game_id: int, version: str) -> list[list]:
         sql = "SELECT * FROM GameVersion WHERE gameId = ? AND VersionNumber = ? LIMIT 1"
@@ -509,10 +503,6 @@ class DatabaseClient:
         return resp
 
     def get_ordered_versions_by_gameid(self, game_id: int) -> list[list]:
-        """
-        Returns all versions for a game, ordered by UploadDate descending (newest first).
-        """
-        # We order by UploadDate DESC so the first result is the 'latest' candidate
         sql = "SELECT * FROM GameVersion WHERE gameId = ? ORDER BY UploadDate DESC"
         params = [game_id]
         resp = self._send_request(sql, params)
@@ -536,8 +526,6 @@ class DatabaseClient:
         return resp
     
     def get_versions_by_game_id(self, game_id):
-        # Adjust table/column names to match your actual schema
-        # Assuming table is 'game_versions' and column is 'version'
         sql = "SELECT VersionNumber FROM GameVersion WHERE gameId = ?"
         params = [game_id]
         resp = self._send_request(sql, params)
@@ -547,7 +535,9 @@ class DatabaseClient:
             else:
                 raise DBclientException(resp.get("error"))
         return resp
-    
+
+    # --- Methods added in recent updates ---
+
     def list_all_games(self) -> list[list]:
         """Returns a list of all games (id, name)."""
         sql = "SELECT id, name FROM Game"
@@ -576,7 +566,6 @@ class DatabaseClient:
         Returns comments for a specific game.
         Joins with User table to get the username.
         """
-        # Selects: Comment ID, User Name, Content, Score, Timestamp
         sql = """
             SELECT C.id, U.name, C.content, C.score, C.timestamp 
             FROM comment C 

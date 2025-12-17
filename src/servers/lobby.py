@@ -9,7 +9,7 @@ import socket
 from DBclient import DatabaseClient
 from time import sleep
 import shutil
-from get_game import get_game_location  # Added import
+from get_game import get_game_location
 
 # ==========================================
 # 1. Operation Registry & Decorator
@@ -49,7 +49,7 @@ class MultiThreadedServer:
         self.db_host = db_host
         self.db_port = db_port
 
-        # Added storage paths
+        # Storage paths
         self.storage_dir = "src/servers/uploaded_games"
         self.temp_dir = "src/servers/lobby_tmp"
         os.makedirs(self.temp_dir, exist_ok=True)
@@ -295,6 +295,7 @@ class MultiThreadedServer:
     @handle_op("list_rooms", auth_required=True)
     def _list_rooms(self, msg, user_id, client_sock, db: DatabaseClient):
         try:
+            # list_all_rooms now returns [id, name, hostId, visibility, status, gameId, gameName]
             rooms = db.list_all_rooms()
             room_list = []
             for room in rooms:
@@ -304,7 +305,9 @@ class MultiThreadedServer:
                     "roomId": room[0],
                     "name": room[1],
                     "hostId": room[2],
-                    "status": room[4]
+                    "status": room[4],
+                    "gameId": room[5],
+                    "gameName": room[6]
                 })
             self.send_to_client_async(user_id, {"status": "ok", "op": "list_rooms", "rooms": room_list})
         except Exception as e:
@@ -314,6 +317,7 @@ class MultiThreadedServer:
     @handle_op("list_online_users", auth_required=True)
     def _list_online_users(self, msg, user_id, client_sock, db: DatabaseClient):
         try:
+            # list_online_users now filters out developers
             users = db.list_online_users()
             users_fmt = [{"id": u[0], "name": u[1]} for u in users]
             self.send_to_client_async(user_id, {"status": "ok", "op": "list_online_users", "users": users_fmt})
@@ -440,7 +444,10 @@ class MultiThreadedServer:
                 "roomId": i[0], 
                 "fromId": i[1], 
                 "fromName": i[2], 
-                "invite_id": i[3]
+                "invite_id": i[3],
+                "roomName": i[4],
+                "gameId": i[5],
+                "gameName": i[6]
             } for i in invites]
             self.send_to_client_async(user_id, {"status": "ok", "op": "list_invite", "invites": invite_list})
         except Exception as e:
@@ -573,7 +580,6 @@ class MultiThreadedServer:
             self.send_to_client_async(user_id, {"status": "error", "op": "download_game", "error": "Missing game_name"})
             return user_id, True
 
-        # 1. Get Game Info
         try:
             game_rows = db.get_game_by_name(game_name)
             if not game_rows:
@@ -586,7 +592,6 @@ class MultiThreadedServer:
             self.send_to_client_async(user_id, {"status": "error", "op": "download_game", "error": f"DB Error: {e}"})
             return user_id, True
 
-        # 2. Locate Files
         source_path = get_game_location(self.storage_dir, owner_id, game_name, latest_version)
         if not os.path.exists(source_path):
              self.send_to_client_async(user_id, {"status": "error", "op": "download_game", "error": "Game files missing on server"})
@@ -599,12 +604,10 @@ class MultiThreadedServer:
         os.makedirs(staging_dir)
 
         try:
-            # Copy client folder
             client_src = os.path.join(source_path, "client")
             if os.path.exists(client_src):
                 shutil.copytree(client_src, os.path.join(staging_dir, "client"))
             
-            # Copy config.json
             config_src = os.path.join(source_path, "config.json")
             if os.path.exists(config_src):
                 shutil.copy(config_src, staging_dir)
@@ -668,7 +671,6 @@ class MultiThreadedServer:
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
             
-            # Get port
             port_line = game_server_process.stdout.readline().decode().strip()
             print(f"[DEBUG] Game server output: {port_line}")
             game_port = int(port_line.split()[-1])
@@ -692,16 +694,13 @@ class MultiThreadedServer:
             monitor_thread.start()
             
             sleep(0.05)
-            return user_id, False # Disconnect
+            return user_id, False 
             
         except Exception as e:
             print(f"Start game error: {e}")
             self.send_to_client_async(user_id, {"status": "error", "op": "start", "error": str(e)})
             return user_id, True
 
-    # -------------------------------------------------------
-    # Monitors
-    # -------------------------------------------------------
     def _gameserver_monitor(self, process, room_id, gamelog_id):
         db = DatabaseClient(self.db_host, self.db_port)
         try:

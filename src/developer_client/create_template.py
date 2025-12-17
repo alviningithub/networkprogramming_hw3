@@ -21,6 +21,9 @@ shutil.copytree("template",f"games/{str}")
 os.chdir(f"games/{str}")
 os.system("uv init --bare")
 
+os.system("uv lock")
+
+
 
 
 

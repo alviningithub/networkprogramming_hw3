@@ -392,12 +392,22 @@ class GameClient:
         if choice == '1':
             resp, _ = self.send_request({"op": "list_online_users"})
             users = resp.get("users", [])
-            print(f"Online Users: {users}")
+            
+            # --- PRETTY PRINT START ---
+            if not users:
+                print("   (No users online)")
+            else:
+                print(f"\n   === {len(users)} User(s) Online ===")
+                for u in users:
+                    print(f"   > [ID: {u['id']}] {u['name']}")
+            print("")
+            # --- PRETTY PRINT END ---
+            
         elif choice == '2':
+            # (Existing room logic...)
             resp, _ = self.send_request({"op": "list_rooms"})
             rooms = resp.get("rooms", [])
             for r in rooms:
-                # Updated to display Game Type (Feature 2)
                 print(f"Room {r['roomId']}: {r['name']} | Game: {r.get('gameName', 'Unknown')} (Host: {r['hostId']}, Status: {r['status']})")
         elif choice == '3':
             self.go_back()
@@ -423,8 +433,16 @@ class GameClient:
             self._print_games()
             gid = input("Enter Game ID: ")
             resp, _ = self.send_request({"op": "show_game_data", "game_id": gid})
+            
+            # --- PRETTY PRINT START ---
             if resp.get("status") == "ok":
-                print(json.dumps(resp.get("data"), indent=2))
+                data = resp.get("data", {})
+                print(f"\n   === Game Details: {data.get('name')} ===")
+                print(f"   ID:          {data.get('id')}")
+                print(f"   Description: {data.get('description')}")
+                print(f"   Version:     v{data.get('latest_version')}")
+                print(f"   Owner ID:    {data.get('owner_id')}")
+                print("   =================================")
             else:
                 print(f"Error: {resp.get('error')}")
         elif choice == '3':
@@ -609,7 +627,18 @@ class GameClient:
 
         elif choice == '3':
             resp, _ = self.send_request({"op": "list_invite"})
-            print(resp.get("invites", "No invites"))
+            invites = resp.get("invites", [])
+            
+            # --- PRETTY PRINT START ---
+            if not invites:
+                print("\n   (No pending invitations)")
+            else:
+                print(f"\n   === Pending Invitations ({len(invites)}) ===")
+                for i in invites:
+                    print(f"   > Invite #{i['invite_id']}")
+                    print(f"     From: {i['fromName']} (ID: {i['fromId']})")
+                    print(f"     Room: '{i['roomName']}' (ID: {i['roomId']})")
+                    print(f"     Game: {i.get('gameName', 'Unknown')}")
 
         elif choice == '4':
             # Req 5: Print invitation details before picking
@@ -679,12 +708,24 @@ class GameClient:
             # Req 3: Validate ID in online user list
             resp, _ = self.send_request({"op": "list_online_users"})
             users = resp.get("users", [])
-            print("Online Users:", users)
+
+            # --- PRETTY PRINT START ---
+            if not users:
+                print("\n   (No users online to invite)")
+                return
+            else:
+                print(f"\n   === Online Users ({len(users)}) ===")
+                for u in users:
+                    # You might want to visually indicate which one is 'me', 
+                    # but usually the server includes everyone.
+                    marker = " (You)" if str(u['id']) == str(self.user_id) else ""
+                    print(f"   > [ID: {u['id']}] {u['name']}{marker}")
+            print("   =============================")
+            # --- PRETTY PRINT END ---
             
             uid = input("User ID to invite: ")
             
             # Validation
-            # users structure: [{"id": 1, "name": "foo"}, ...]
             valid_uids = [str(u['id']) for u in users]
             if uid not in valid_uids:
                 print("Error: User ID not found in online list.")
@@ -694,9 +735,21 @@ class GameClient:
             print(resp.get("message", resp.get("error")))
 
         elif choice == '4':
-            # List requests first
             resp, _ = self.send_request({"op": "list_request"})
-            print("Requests:", resp.get("requests"))
+            requests = resp.get("requests", [])
+            
+            # --- PRETTY PRINT START ---
+            if not requests:
+                print("\n   (No pending join requests)")
+                return # Exit early if no requests to act on
+            else:
+                print(f"\n   === Join Requests ({len(requests)}) ===")
+                for r in requests:
+                    print(f"   > Request #{r['request_id']}")
+                    print(f"     From User: {r['fromName']} (ID: {r['fromId']})")
+                    print(f"     Target Room: {r['roomId']}")
+                    print("     -----------------------------")
+            # --- PRETTY PRINT END ---
             
             rid = input("Request ID to reply: ")
             dec = input("Accept? (y/n): ")

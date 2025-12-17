@@ -581,3 +581,21 @@ class DatabaseClient:
             else:
                 raise DBclientException(resp.get("error"))
         return resp
+    
+    def insert_comment(self, game_id: int, user_id: int, content: str, score: int):
+        """
+        Inserts a review comment for a specific game.
+        """
+        
+        query = """
+            INSERT INTO comment (gameId, userId, content, score)
+            VALUES (?, ?, ?, ?) RETURNING *
+        """
+        params = [game_id,user_id,content,score]
+        resp = self._send_request(sql, params)
+        if isinstance(resp, dict):
+            if resp.get("status") == "ok":
+                return resp.get("data")
+            else:
+                raise DBclientException(resp.get("error"))
+        return resp

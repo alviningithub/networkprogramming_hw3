@@ -294,12 +294,14 @@ class GameClient:
             print(f"Error: {resp.get('error')}")
 
     # --- 2. Main Lobby Menu ---
+# --- 2. Main Lobby Menu ---
     def menu_lobby(self):
         print(f"\n=== Main Lobby ({self.username}) ===")
         print("1. Browse Lobby Status")
         print("2. Enter Game Store")
         print("3. Room & Gameplay")
         print("4. Logout")
+        print("5. Rate a Game")  # <--- NEW OPTION
         choice = input("Select: ").strip()
 
         if choice == '1':
@@ -313,11 +315,55 @@ class GameClient:
             self.user_id = None
             self.current_room_id = None
             self.go_back()
+        elif choice == '5':       # <--- NEW HANDLER
+            self._handle_add_comment()
         elif choice == '' and self.wait_for_enter:
             self.start_game_event.set()
             self.game_set_event.wait()
             self.menu_stack.append(self.menu_restart)
+            
+    def _handle_add_comment(self):
+        print("\n--- Rate a Game ---")
+        
+        # 1. List the games so the user knows the IDs
+        print("Fetching game list...")
+        games = self._print_games() # Reuse existing helper
+        if not games:
+            print("No games available to rate.")
+            return
 
+        # 2. Get User Input
+        game_id = input("Enter Game ID: ").strip()
+        comment = input("Enter your comment: ").strip()
+        score_str = input("Enter Score (1-5): ").strip()
+
+        # 3. Simple Client-side Validation
+        if not game_id or not comment or not score_str:
+            print("Error: All fields are required.")
+            return
+        
+        if not score_str.isdigit() or not (1 <= int(score_str) <= 5):
+            print("Error: Score must be a number between 1 and 5.")
+            return
+
+        # 4. Send Request
+        payload = {
+            "op": "add_comment",
+            "game_id": game_id,
+            "content": comment,
+            "score": int(score_str)
+        }
+        
+        print("Sending review...")
+        resp, _ = self.send_request(payload)
+
+        # 5. Handle Response
+        if resp and resp.get("status") == "ok":
+            print(f"Success: {resp.get('message')}")
+        else:
+            print(f"Error: {resp.get('error') if resp else 'No response'}")
+        
+        input("\nPress Enter to continue...")
 
     # --- 2.1 Lobby Status ---
     def menu_lobby_status(self):

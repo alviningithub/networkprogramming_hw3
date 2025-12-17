@@ -793,6 +793,53 @@ class MultiThreadedServer:
         print(f"[Monitor] Game server for room {room_id} exited cleanly.")
         db.close()
 
+    @handle_op("add_comment", auth_required=True)
+    def _add_comment(self, msg, user_id, client_sock, db: DatabaseClient):
+        game_id = msg.get("game_id")
+        content = msg.get("content")
+        score = msg.get("score")
+
+        # 1. Basic Validation
+        if not game_id or not content or score is None:
+            self.send_to_client_async(user_id, {
+                "status": "error", 
+                "op": "add_comment", 
+                "error": "Missing game_id, content, or score"
+            })
+            return user_id, True
+
+        # 2. Score Validation (Must be 1-5 based on DB constraints)
+        try:
+            score = int(score)
+            if score < 1 or score > 5:
+                raise ValueError("Score must be between 1 and 5")
+        except ValueError:
+            self.send_to_client_async(user_id, {
+                "status": "error", 
+                "op": "add_comment", 
+                "error": "Score must be an integer between 1 and 5"
+            })
+            return user_id, True
+
+        try:
+            # 3. Insert into DB
+            db.insert_comment(game_id, user_id, content, score)
+            
+            self.send_to_client_async(user_id, {
+                "status": "ok", 
+                "op": "add_comment", 
+                "message": "Comment added successfully"
+            })
+            
+        except Exception as e:
+            self.send_to_client_async(user_id, {
+                "status": "error", 
+                "op": "add_comment", 
+                "error": str(e)
+            })
+
+        return user_id, True
+
 if __name__ == "__main__":
     load_dotenv()
     db_port = int(os.getenv("DB_PORT", "16384"))

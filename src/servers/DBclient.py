@@ -587,7 +587,7 @@ class DatabaseClient:
         Inserts a review comment for a specific game.
         """
         
-        query = """
+        sql = """
             INSERT INTO comment (gameId, userId, content, score)
             VALUES (?, ?, ?, ?) RETURNING *
         """

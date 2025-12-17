@@ -545,7 +545,7 @@ class MultiThreadedServer:
                 row = game_data[0]
                 response_data = {
                     "id": row[0], "name": row[1], "description": row[2], 
-                    "owner_id": row[3], "latest_version": row[4]
+                    "owner_id": row[3], "latest_version": row[4] , "min_players": row[5], "max_players": row[6]
                 }
                 self.send_to_client_async(user_id, {"status": "ok", "op": "show_game_data", "data": response_data})
         except Exception as e:
@@ -697,9 +697,6 @@ class MultiThreadedServer:
             
             roomId = room_data[0][0]
             room_users = db.list_user_in_room(roomId)
-            if len(room_users) < 2:
-                self.send_to_client_async(user_id, {"status": "error", "op": "start", "error": "Not enough players"})
-                return user_id, True
             # get game info
             room = db.get_room_by_id(roomId)
             gameid = room[0][5]
@@ -707,6 +704,13 @@ class MultiThreadedServer:
             ownerid = game[0][3]
             game_name = game[0][1]
             LatestVersion = game[0][4]
+            min_players = game[0][5]
+            max_players = game[0][6]
+
+            if len(room_users) < min_players or len(room_users) > max_players:
+                self.send_to_client_async(user_id, {"status": "error", "op": "start", "error": "Player count not in allowed range"})
+                return user_id, True
+            
             gamefolder = get_game_location(self.storage_dir,ownerid,game_name,LatestVersion)
             path = os.getcwd()
             os.chdir(gamefolder)    

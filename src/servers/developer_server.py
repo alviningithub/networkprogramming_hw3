@@ -81,7 +81,7 @@ def get_config(root_path: str) -> Dict[str, Any]:
     except json.JSONDecodeError:
         raise ValueError("Config Error: 'config.json' is not valid JSON.")
 
-    required_fields = ["name", "version", "description", "command"]
+    required_fields = ["name", "version", "description", "command", "min_players", "max_players"]
     missing = [k for k in required_fields if k not in config]
     empty = [k for k in required_fields if config[k] == '']
     
@@ -333,6 +333,8 @@ class GameShopServer:
             game_name = config["name"]
             version = config["version"]
             command = config["command"]
+            min_players = config["min_players"]
+            max_players = config["max_players"]
 
             # 4. Logic & Move
             # check if the same name exist
@@ -341,7 +343,7 @@ class GameShopServer:
                 raise Exception("Game exists.")
             #insert into database
             #insert game
-            game_id = db.insert_game(game_name, config["description"], userId, version)
+            game_id = db.insert_game(game_name, config["description"], userId, version,min_players, max_players)
             #insert version
             version_id = db.insert_game_version(game_id[0][0], version, command)
             #clear garbage if any
@@ -386,6 +388,8 @@ class GameShopServer:
             game_name = config["name"]
             version = config["version"]
             description = config.get("description") #
+            min_players = config["min_players"]
+            max_players = config["max_players"]
 
             # 4. Logic & Move
             # Check if game exists
@@ -408,7 +412,7 @@ class GameShopServer:
             
             # --- UPDATE ---
             # Update both the LatestVersion AND the Description
-            db.update_game(gameid, latest_version=version, description=description)
+            db.update_game(gameid, latest_version=version, description=description , min_players=min_players, max_players=max_players)
             # --------------
 
             # Move files

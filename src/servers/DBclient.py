@@ -401,16 +401,16 @@ class DatabaseClient:
         sql = "SELECT * FROM Game WHERE name = ? LIMIT 1"
         params = [game_name]
         resp = self._send_request(sql, params)
-        if isinstance(resp, dict):
+        if isinstance(resp, dict): 
             if resp.get("status") == "ok":
                 return resp.get("data")
             else :
                 raise DBclientException(resp.get("error"))
         return resp
 
-    def insert_game(self, name: str, description: str, ownerId: int, latestVersion: str) -> list[list]:
-        sql = "INSERT INTO Game (name, description, OwnerID, LatestVersion) VALUES (?, ?, ?, ?) RETURNING id"
-        params = [name, description, ownerId, latestVersion]
+    def insert_game(self, name: str, description: str, ownerId: int, latestVersion: str, min_players: int, max_players: int) -> list[list]:
+        sql = "INSERT INTO Game (name, description, OwnerID, LatestVersion, min_players, max_players) VALUES (?, ?, ?, ?, ?, ?) RETURNING id"
+        params = [name, description, ownerId, latestVersion,min_players,max_players]
         resp = self._send_request(sql, params)
         if isinstance(resp, dict):
             if resp.get("status") == "ok":
@@ -430,7 +430,7 @@ class DatabaseClient:
             
     # ... inside DatabaseClient class ...
 
-    def update_game(self, game_id: int, latest_version: str = None, description: str = None) -> list[list]:
+    def update_game(self, game_id: int, latest_version: str = None, description: str = None, min_players: int = None, max_players: int = None) -> list[list]:
         """
         Dynamically updates Game fields (LatestVersion, description).
         """
@@ -444,6 +444,13 @@ class DatabaseClient:
         if description is not None:
             fields.append("description = ?")
             params.append(description)
+
+        if min_players is not None:
+            fields.append("min_players = ?")
+            params.append(min_players)
+        if max_players is not None:
+            fields.append("max_players = ?")
+            params.append(max_players)
 
         if not fields:
             raise ValueError("No fields provided to update")

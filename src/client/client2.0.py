@@ -442,6 +442,8 @@ class GameClient:
                 print(f"   Description: {data.get('description')}")
                 print(f"   Version:     v{data.get('latest_version')}")
                 print(f"   Owner ID:    {data.get('owner_id')}")
+                print(f"   Min Players: {data.get('min_players')}")
+                print(f"   Max Players: {data.get('max_players')}")
                 print("   =================================")
             else:
                 print(f"Error: {resp.get('error')}")

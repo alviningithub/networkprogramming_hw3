@@ -26,6 +26,8 @@ def initialize_database(db_path: str):
             description TEXT,
             OwnerId INTEGER NOT NULL,
             LatestVersion CHAR(10) NOT NULL,
+            min_players INTEGER NOT NULL DEFAULT 2,
+            max_players INTEGER NOT NULL DEFAULT 2,
             FOREIGN KEY(OwnerId) REFERENCES User(id)
         );
 

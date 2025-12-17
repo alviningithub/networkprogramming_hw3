@@ -86,9 +86,9 @@ def get_config(root_path: str) -> Dict[str, Any]:
     empty = [k for k in required_fields if config[k] == '']
     
     if missing:
-        raise ValueError(f"Config Error: Missing required fields: {",".join(missing)}")
+        raise ValueError(f"Config Error: Missing required fields: {','.join(missing)}")
     if empty:
-        raise ValueError(f"Config Error: Critical config message not filled", {",".join(empty)})
+        raise ValueError(f"Config Error: Critical config message not filled: {','.join(empty)}")
 
     return config
 
@@ -97,11 +97,16 @@ def check_folder_structure(root_path: str):
     Validates that the folder contains the required file hierarchy:
     - client/client_main.py
     - server/server_main.py
+    - config.json (checked in get_config, but implied here)
+    - pyproject.toml
+    - uv.lock
     """
     client_dir = os.path.join(root_path, "client")
     client_main = os.path.join(client_dir, "client_main.py")
     server_dir = os.path.join(root_path, "server")
     server_main = os.path.join(server_dir, "server_main.py")
+    pyproject = os.path.join(root_path, "pyproject.toml")
+    uv_lock = os.path.join(root_path, "uv.lock")
 
     if not os.path.isdir(client_dir):
         raise ValueError("Structure Error: 'client' directory missing.")
@@ -114,6 +119,12 @@ def check_folder_structure(root_path: str):
 
     if not os.path.isfile(server_main):
         raise ValueError("Structure Error: 'server/server_main.py' missing.")
+
+    if not os.path.isfile(pyproject):
+        raise ValueError("Structure Error: 'pyproject.toml' missing.")
+
+    if not os.path.isfile(uv_lock):
+        raise ValueError("Structure Error: 'uv.lock' missing.")
 
 class GameShopServer:
     def __init__(self, host: str, port: int):

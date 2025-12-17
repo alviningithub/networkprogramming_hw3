@@ -5,6 +5,7 @@ import shutil
 import hashlib
 import sys
 import time
+import zipfile  # Added for custom zipping
 from dotenv import load_dotenv
 
 # Ensure TCPutils is available
@@ -183,18 +184,51 @@ class DeveloperClient:
             print(f"   [!] Error: Folder '{source_path}' does not exist.")
             return None
         
-        # Check required structure
-        required = ["config.json", "client", "server"]
-        for item in required:
-            if not os.path.exists(os.path.join(source_path, item)):
-                print(f"   [!] Error: Missing '{item}' in {source_path}")
+        # Check required structure (Updated for pyproject.toml and uv.lock)
+        required_files = ["config.json", "pyproject.toml", "uv.lock"]
+        required_dirs = ["client", "server"]
+        
+        for item in required_files:
+            if not os.path.isfile(os.path.join(source_path, item)):
+                print(f"   [!] Error: Missing file '{item}' in {source_path}")
                 return None
         
-        # Zip it
-        temp_zip = f"temp_{game_folder_name}" 
-        print(f"   [...] Compressing '{game_folder_name}'...")
-        zip_path = shutil.make_archive(temp_zip, 'zip', root_dir=GAMES_DIR, base_dir=game_folder_name)
-        return zip_path
+        for item in required_dirs:
+            if not os.path.isdir(os.path.join(source_path, item)):
+                print(f"   [!] Error: Missing directory '{item}' in {source_path}")
+                return None
+            
+        # Specific check for mains
+        if not os.path.isfile(os.path.join(source_path, "client", "client_main.py")):
+            print(f"   [!] Error: Missing 'client/client_main.py'")
+            return None
+        if not os.path.isfile(os.path.join(source_path, "server", "server_main.py")):
+            print(f"   [!] Error: Missing 'server/server_main.py'")
+            return None
+        
+        # Zip it manually to exclude .venv
+        temp_zip = f"temp_{game_folder_name}.zip"
+        print(f"   [...] Compressing '{game_folder_name}' (excluding .venv)...")
+        
+        try:
+            with zipfile.ZipFile(temp_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(source_path):
+                    # In-place modification of dirs to prevent walking into .venv
+                    if '.venv' in dirs:
+                        dirs.remove('.venv')
+                    
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        # We want the folder inside the zip to start with game_folder_name
+                        # e.g., if path is src/developer_client/games/mygame/config.json
+                        # relpath is mygame/config.json
+                        arcname = os.path.relpath(file_path, GAMES_DIR)
+                        zipf.write(file_path, arcname)
+            
+            return temp_zip
+        except Exception as e:
+            print(f"   [!] Error creating zip: {e}")
+            return None
 
     # ==========================================
     #           INTERACTIVE ACTIONS

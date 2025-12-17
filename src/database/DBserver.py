@@ -10,6 +10,7 @@ load_dotenv()
 db_host = socket.gethostbyname(socket.gethostname())
 db_path = os.getenv("DB_PATH")
 db_port = int(os.getenv("DB_PORT"))
+db_ip = os.getenv("DB_IP")
 
 ##############################################
 # Database Service
@@ -112,7 +113,7 @@ class DBServer:
 
 if __name__ == "__main__":
     # host = input("please input DB machine ip")
-    host = "140.113.122.54"
+    host = db_ip
     db_server = DBServer(host, db_port, db_path)
     db_server.start()
     

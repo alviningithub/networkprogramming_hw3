@@ -410,7 +410,7 @@ class MultiThreadedServer:
                 db.remove_invite_by_fromid(user_id)
                 db.add_user_to_room(room_id, user_id)
                 
-                self.send_to_client_async(user_id, {"status": "ok", "op": "respond_invite", "message": f"Joined room {room_id}"})
+                self.send_to_client_async(user_id, {"status": "ok", "op": "respond_invite", "message": f"Joined room {room_id}" , "room_id": room_id} )
                 self.send_to_client_async(inviter_id, {
                     "status": "ok", 
                     "op": "invite_accepted", 

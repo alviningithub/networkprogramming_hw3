@@ -5,13 +5,14 @@ import os
 import shutil
 import zipfile
 import sys
+import re
 from time import sleep
 
-# Import your provided utils
-from utils.TCPutils import send_json, recv_file
+# Import your provided utils including the Exception
+from utils.TCPutils import send_json, recv_file, ConnectionClosedByPeer
 
 # Configuration
-HOST = "140.113.122.54"
+HOST = "127.0.0.1"
 PORT = 20012
 TEMP_DIR = "src/client/client_tmp"  # Where raw downloads land first
 DOWNLOAD_BASE_DIR = "src/client/downloads"
@@ -56,17 +57,16 @@ class GameClient:
         """
         while self.running:
             try:
-                # We use recv_file because it handles both pure JSON and File messages automatically
+                # 1. Error Handling Fix: Catch exceptions from recv_file
                 metadata, file_path = recv_file(self.sock, TEMP_DIR)
                 
                 if metadata is None:
-                    print("\n[Server disconnected]")
-                    self.running = False
-                    os._exit(0)
+                    # None usually implies a timeout if set, or empty read
+                    continue
 
                 op = metadata.get("op")
                 
-                # List of ops that are async notifications (not responses to current input)
+                # List of ops that are async notifications
                 notifications = [
                     "receive_invite", "invite_accepted", "invite_declined",
                     "receive_request", "request_accepted", "request_declined",
@@ -75,12 +75,20 @@ class GameClient:
 
                 if op in notifications:
                     print(f"\n\n*** NOTIFICATION: {metadata.get('message', op)} ***")
+                    
+                    # Handle specific notification data
                     if op == "receive_invite":
                         print(f"   -> Invite from {metadata.get('fromName')} (Room {metadata.get('roomId')})")
                     elif op == "start":
                         print(f"   -> GAME STARTING on {metadata.get('game_server_ip')}:{metadata.get('game_server_port')}")
-                        # Note: Actual game launch logic would go here
-                    
+                        # Note: In a real implementation, you would launch the game process here.
+                    elif op == "request_accepted":
+                         # If *I* am the one requesting, and I get accepted, I need to switch to Room Mode
+                         rid = metadata.get("roomId")
+                         if rid:
+                             self.current_room_id = rid
+                             print(f"   -> Room ID set to {rid}. Please Go Back to menu to see room options.")
+
                     # Reprint the prompt so the user knows they can still type
                     print("\n> ", end="", flush=True)
 
@@ -90,8 +98,11 @@ class GameClient:
                     self.latest_file_path = file_path
                     self.response_event.set()
 
+            except ConnectionClosedByPeer:
+                print("\n[Server disconnected - Connection Closed]")
+                self.running = False
+                os._exit(0)
             except Exception as e:
-                # If socket closes or errors
                 if self.running:
                     print(f"\n[Connection Error]: {e}")
                     self.running = False
@@ -213,6 +224,7 @@ class GameClient:
         elif choice == '4':
             self.send_request({"op": "logout"})
             self.user_id = None
+            self.current_room_id = None
             self.go_back()
 
     # --- 2.1 Lobby Status ---
@@ -247,6 +259,8 @@ class GameClient:
         if choice == '1':
             self._print_games()
         elif choice == '2':
+            # Req 1: List games before picking
+            self._print_games()
             gid = input("Enter Game ID: ")
             resp, _ = self.send_request({"op": "show_game_data", "game_id": gid})
             if resp.get("status") == "ok":
@@ -270,16 +284,13 @@ class GameClient:
         games = self._print_games()
         if not games: return
 
-        # Simple name match for CLI demo
         target_name = input("Enter exact Game Name to download: ").strip()
         
         print("Downloading... (Please wait)")
         # Request download
-        # Note: TCPutils.recv_file in the listener will catch the file automatically
         resp, file_path = self.send_request({"op": "download_game", "game_name": target_name})
         
         if resp.get("status") == "ok" and file_path:
-            # Here is where we implement your specific folder logic
             self._process_downloaded_game(file_path, target_name)
         else:
             print(f"Download failed: {resp.get('error', 'Unknown error')}")
@@ -313,7 +324,12 @@ class GameClient:
     def _handle_no_room_actions(self, choice):
         if choice == '1':
             name = input("Room Name: ")
+            
+            # Req 2: List games right before inputting Game ID
+            print("Select a game for this room:")
+            self._print_games()
             g_id = input("Game ID: ")
+            
             vis = input("Visibility (public/private): ")
             resp, _ = self.send_request({
                 "op": "create_room", "name": name, "gameId": g_id, "visibility": vis
@@ -325,10 +341,25 @@ class GameClient:
                 print(f"Error: {resp.get('error')}")
 
         elif choice == '2':
-            # List rooms first
-            self.send_request({"op": "list_rooms"})
-            # Then ask
+            # Req 4: Validate ID in available room list
+            resp, _ = self.send_request({"op": "list_rooms"})
+            rooms = resp.get("rooms", [])
+            if resp.get("status") == "ok":
+                print("Available Rooms:")
+                for r in rooms:
+                    print(f"ID: {r['roomId']} | Name: {r['name']}")
+            else:
+                print("Error fetching rooms.")
+                return
+
             rid = input("Room ID to join: ")
+            
+            # Validation
+            valid_rids = [str(r['roomId']) for r in rooms]
+            if rid not in valid_rids:
+                print("Error: Room ID not found in the list.")
+                return
+
             resp, _ = self.send_request({"op": "request", "room_id": rid})
             print(resp.get("message", resp.get("error")))
 
@@ -337,19 +368,36 @@ class GameClient:
             print(resp.get("invites", "No invites"))
 
         elif choice == '4':
-            i_id = input("Invite ID: ")
+            # Req 5: Print invitation details before picking
+            resp, _ = self.send_request({"op": "list_invite"})
+            invites = resp.get("invites", [])
+            
+            if not invites:
+                print("No pending invitations.")
+                return
+
+            print("Pending Invitations:")
+            # Format: {"roomId": i[0], "fromId": i[1], "fromName": i[2], "invite_id": i[3]}
+            for inv in invites:
+                print(f"Invite ID: {inv['invite_id']} | From: {inv['fromName']} (ID: {inv['fromId']}) | Room: {inv['roomId']}")
+            
+            i_id = input("Enter Invite ID to reply: ")
+            
+            # Validate Invite ID exists locally
+            valid_iids = [str(inv['invite_id']) for inv in invites]
+            if i_id not in valid_iids:
+                print("Error: Invalid Invite ID.")
+                return
+
             dec = input("Accept? (y/n): ")
             response = "accept" if dec.lower() == 'y' else "decline"
             resp, _ = self.send_request({"op": "respond_invite", "invite_id": i_id, "response": response})
             print(resp.get("message", resp.get("error")))
+            
+            # Extract Room ID from message to update status
             if response == "accept" and resp.get("status") == "ok":
-                # Assuming the message contains room ID or we need to query it. 
-                # For simplicity, we just assume user is now in *a* room. 
-                # Ideally, the server response would confirm the roomId.
-                print("Joined room.")
-                # We need to refresh status to find out which room we are in or just assume:
-                # In a real app, query "my_status". Here we might just list rooms or wait for a push.
-                pass 
+                room_id = resp.get("room_id", "")
+                self.current_room_id = int(room_id)
 
         elif choice == '5':
             self.go_back()
@@ -368,7 +416,20 @@ class GameClient:
                 print("Left room.")
         
         elif choice == '3':
+            # Req 3: Validate ID in online user list
+            resp, _ = self.send_request({"op": "list_online_users"})
+            users = resp.get("users", [])
+            print("Online Users:", users)
+            
             uid = input("User ID to invite: ")
+            
+            # Validation
+            # users structure: [{"id": 1, "name": "foo"}, ...]
+            valid_uids = [str(u['id']) for u in users]
+            if uid not in valid_uids:
+                print("Error: User ID not found in online list.")
+                return
+
             resp, _ = self.send_request({"op": "invite_user", "invitee_id": uid})
             print(resp.get("message", resp.get("error")))
 

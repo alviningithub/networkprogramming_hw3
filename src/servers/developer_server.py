@@ -18,6 +18,7 @@ load_dotenv()
 DB_IP = os.getenv("DB_IP")
 DB_PORT = int(os.getenv("DB_PORT")) 
 DEVELOPER_SERVER_PORT = int(os.getenv("DEVELOPER_SERVER_PORT"))
+DEVELOPER_SERVER_IP = os.getenv("DEVELOPER_SERVER_IP")
 
 # --- Decorator for Dispatching ---
 HANDLER_REGISTRY = {}
@@ -574,5 +575,5 @@ class GameShopServer:
             TCPutils.send_json(conn, {"status": "ERROR", "op": "list_versions", "message": str(e)})
 
 if __name__ == "__main__":
-    server = GameShopServer("0.0.0.0", DEVELOPER_SERVER_PORT)
+    server = GameShopServer(DEVELOPER_SERVER_IP, DEVELOPER_SERVER_PORT)
     server.start()

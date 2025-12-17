@@ -19,6 +19,10 @@ db_ip = os.getenv("DB_IP","140.113.17.11")
 class SQLiteService:
     def __init__(self, db_path: str):
         self.db_path = db_path
+        if not os.path.exists(db_path):
+            os.makedirs(os.path.dirname(db_path))
+            with open(os.path.basename(db_path),'w') as f:
+                pass
 
     def execute_sql(self, sql: str, params: Optional[List[Any]] = None) -> Tuple[bool, Any]:
         try:

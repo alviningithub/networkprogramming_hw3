@@ -795,6 +795,7 @@ class GameClient:
 if __name__ == "__main__":
     # Ensure temp dirs exist
     os.makedirs(TEMP_DIR, exist_ok=True)
+    os.makedirs(DOWNLOAD_BASE_DIR,exist_ok=True)
     
     client = GameClient()
     client.start()

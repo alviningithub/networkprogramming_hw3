@@ -1,0 +1,8 @@
+{
+    "name":"minesweeper",
+    "version":"1.0.2",
+    "description":"swept mine with your best friend",
+    "command": "x",
+    "min_players":"2",
+    "max_players":"5"
+}

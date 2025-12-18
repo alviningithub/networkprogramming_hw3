@@ -58,6 +58,6 @@ __pycache__
 src/database/data/database
 .env
 test/
-src/developer_client/games/*
+
 src/client/downloads/*
 src/servers/uploaded_games/*

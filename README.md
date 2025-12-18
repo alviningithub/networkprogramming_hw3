@@ -46,3 +46,7 @@ uv run src/client/client2.0.py
 ```bash
 uv run src/developer_client/developer_client.py
 ```
+7. run create_template.py
+```bash
+uv run src/developer_client/create_template.py
+```

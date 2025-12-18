@@ -1,0 +1,28 @@
+Create a multiplayer minesweeper GUI game that fulfill the follow architecture.
+
+The Architecture
+Server (server.py):
+
+Input: Reads a JSON object from Standard Input (Piped) containing the IP and user count.
+Output: Prints the randomly assigned Port Number to Standard Output immediately.
+Logic: Waits for n clients (in the json object), then runs for one rounds. It handles disconnection if a user exits early.
+
+Client (client.py):
+Input: Accepts IP, Port, ID, and Name as Command Line Arguments.
+Logic: Connects to the server, sends identity, handles user input for moves, and disconnects  if "exit" is typed. Show the final result .
+
+The json object looks like the follow
+{
+    "ip_address": "",
+    "users": n,
+    "userids": []
+}
+
+The rule of the mineswepper is like this:
+Players take turns.
+In their round, they can do the two things.
+First, they can pick a block and reveal it like normal minesweeper
+If the block that revealed is not a mine. They get 1 points
+If it is ,  minus 3 points.
+Second, they can pick a block and tag it.
+At the end of the game, the tag  that is correctly placed on the mine get 5 points.
